@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: flora
+          POSTGRES_PASSWORD: flora
+          POSTGRES_DB: flora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+        working-directory: backend
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+        working-directory: backend
+
+      - name: Type check with mypy
+        run: uv run mypy . --ignore-missing-imports
+        working-directory: backend
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+        env:
+          DATABASE_URL: postgresql+asyncpg://flora:flora@localhost:5432/flora
+          LLM_PROVIDER: ollama  # tests mock the provider
+
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: flora-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: flora-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
