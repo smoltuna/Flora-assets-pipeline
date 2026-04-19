@@ -16,3 +16,17 @@ mlruns/
 .terraform/
 .terraform.lock.hcl
 infra/.env
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Claude Code
+.claude/
+
+# Project planning docs
+flora-asset-pipeline-v2.md
+
+# Generated image output
+/tmp/flora_images/
+test_results/

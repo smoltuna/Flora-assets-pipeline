@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_bucket: str = "flora-assets"
 
-    replicate_api_token: str = ""
+    # fal.ai (vision judge + FLUX lock icon generation)
+    fal_key: str = ""
 
     # MLflow
     mlflow_tracking_uri: str = "http://localhost:5001"

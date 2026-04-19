@@ -237,16 +237,20 @@ async def test_image_bg_task_sets_all_three_paths_with_one_candidate(monkeypatch
 
     async def fake_search(latin_name):
         c = _FakeCandidate()
-        return ImagePair(info=c, blossom=c)
+        return ImagePair(info=c, blossom=c, blossom_candidates=[c])
+
+    # Patch both the legacy wikimedia.find_images and the new search.find_images
+    import services.images.search as search_mod
+    monkeypatch.setattr(search_mod, "find_images", fake_search)
 
     async def fake_process_info(candidate, latin_name):
         return "/tmp/flora_images/rosa_canina-info.jpg", "John Doe"
 
-    async def fake_process_main(candidate, latin_name):
+    async def fake_process_main(candidate, latin_name, candidates=None, fal_key=""):
         captured["main_candidate_url"] = candidate.url
-        return "/tmp/flora_images/rosa_canina.png"
+        return "/tmp/flora_images/rosa_canina.png", b"fake_raw_bytes"
 
-    async def fake_lock(main_path, latin_name):
+    async def fake_lock(main_path, latin_name, *, common_name="", reference_bytes=None, fal_key=""):
         return "/tmp/flora_images/rosa_canina-lock.png"
 
     monkeypatch.setattr(wiki_mod, "find_images", fake_search)

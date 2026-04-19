@@ -6,21 +6,14 @@ Search strategy — cast a wide net, then score aggressively:
   3. Text search: "{latin_name}"    (catches mis-categorised files)
   4. Text search: "{genus} flower"  (last-resort fallback)
 
-All queries run until we accumulate ≥ MIN_CANDIDATES (40) images, then stop.
-Each candidate is scored independently for two roles:
-
-  • info    — artistic / landscape photograph for the detail screen
-  • blossom — tight close-up of the flower head for rembg → home.png
-
-Scoring uses **all available metadata**: title, description, categories,
-dimensions, file size — not just the title.  This dramatically improves
-selection quality on Wikimedia where many excellent photos have generic
-titles like "File:Rosa canina 003.jpg".
+All queries run until we accumulate >= MIN_CANDIDATES images, then stop.
+Each candidate is a WikimediaImage dataclass ready for unified scoring
+in the search orchestrator (search.py).
 """
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import httpx
 
@@ -50,55 +43,33 @@ _SKIP_RE = re.compile(
     r"|museum|naturalis"
     r"|distribution|range|\bmap\b"
     r"|\blogo\b|\bicon\b|\bclipart\b|\bdiagram\b"
-    # Commercial / non-botanical contexts (shop displays, product labels, etc.)
+    # Commercial / non-botanical contexts
     r"|\bposter\b|\bstore\b|\bshop\b|\bcollage\b|\bpanel\b|\bpackaging\b|\blabel\b"
-    # Camera dump filenames ("Batch", "DSC_", "IMG_" with a number)
+    # Camera dump filenames
     r"|\bbatch\b"
-    # Animals / insects — often photographed on flowers but wrong subject
+    # Buildings, monuments
+    r"|abbaye|abbey|cathedral|eglise|church|castle|château|chateau"
+    r"|monastery|basilica|mosque|temple\b|chapel"
+    r"|\bbouquet\b|\barrangement\b|\bvase\b|\bpot\b"
+    r"|panorami|panorama|landscape\b"
+    # Animals / insects on flowers
     r"|bombus|apis|butterfly|moth|bee\b|bumblebee|insect|beetle|spider|bird"
     r"|caterpillar|larvae|larva|hymenoptera|lepidoptera|coleoptera|diptera"
     r"|pollinator|pollinat"
-    # Common butterfly genera that appear on flower photos
+    # Common butterfly genera
     r"|\bvanessa\b|\bpapilio\b|\bpieris\b|\bgonepteryx\b|\baglais\b"
-    # Person-centred photos (title is the primary clue — "girl", "woman", etc.)
+    # Person-centred photos
     r"|\bgirl\b|\bwoman\b|\bman\b|\bboy\b|\bchild\b|\bperson\b|\bpeople\b"
     r"|\bdívka\b|\bchica\b|\bfrau\b|\bhomme\b|\bfemme\b"
-    r"|\d{7,}",  # long numeric IDs (scan barcodes, Flickr IDs, etc.)
+    r"|\d{7,}",  # long numeric IDs
     re.IGNORECASE,
 )
 
-# Additional skip for description text (more lenient — descriptions are long)
 _DESC_SKIP_RE = re.compile(
     r"herbarium sheet|pressed plant|dried specimen|botanical illustration"
     r"|line drawing|pen and ink|woodcut"
-    # Commercial / display contexts
     r"|\bposter\b|\bstore\b|\bshop\b|\bcollage\b"
     r"|collection of (?:flowers|plants)|mixed flowers",
-    re.IGNORECASE,
-)
-
-# ---------------------------------------------------------------------------
-# Positive-signal patterns for scoring
-# ---------------------------------------------------------------------------
-
-_FLOWER_RE = re.compile(
-    r"\bflower|bloom|blossom|inflorescence|petal|floral\b", re.IGNORECASE
-)
-_CLOSEUP_RE = re.compile(
-    r"\bmacro\b|\bclose.?up\b|\bdetail\b|\bnahaufnahme\b", re.IGNORECASE
-)
-_SCENIC_RE = re.compile(
-    r"\bgarden|field|meadow|habitat|landscape|nature|wild|hedgerow|path\b",
-    re.IGNORECASE,
-)
-_NONFLOWER_PARTS_RE = re.compile(
-    r"\bleaf\b|\bleaves\b|\bstem\b|\bbranch\b|\broot\b"
-    r"|\bfruit\b|\bseed\b|\bbark\b|\bthorn\b|\bhip\b|\bberry\b",
-    re.IGNORECASE,
-)
-# Quality-of-Commons indicators — images from known quality reviews
-_QUALITY_RE = re.compile(
-    r"quality.?image|featured.?picture|valued.?image|wiki.?loves",
     re.IGNORECASE,
 )
 
@@ -114,6 +85,7 @@ class WikimediaImage:
     size_bytes: int
     description: str = ""
     categories: str = ""
+    thumb_url: str = ""  # CDN thumbnail URL (1024 px) from iiurlwidth — preferred for downloads
 
     @property
     def aspect(self) -> float:
@@ -133,11 +105,16 @@ class WikimediaImage:
         """Combined searchable text for scoring."""
         return f"{self.title} {self.description} {self.categories}"
 
+    @property
+    def source(self) -> str:
+        return "wikimedia"
+
 
 @dataclass
 class ImagePair:
-    info: WikimediaImage      # artistic / landscape — for the detail/info screen
-    blossom: WikimediaImage   # close-up flower head — for home.png after rembg
+    info: WikimediaImage              # artistic / landscape — for the detail/info screen
+    blossom: WikimediaImage           # top-scored close-up (Gemini will re-rank)
+    blossom_candidates: list = None   # top N candidates for Gemini vision to judge
 
 
 # ---------------------------------------------------------------------------
@@ -145,10 +122,7 @@ class ImagePair:
 # ---------------------------------------------------------------------------
 
 def _parse_image(page: dict) -> WikimediaImage | None:
-    """Validate and convert an API page dict to a WikimediaImage.
-
-    Returns None on license, MIME, resolution, size, or title failures.
-    """
+    """Validate and convert an API page dict to a WikimediaImage."""
     info_list = page.get("imageinfo", [])
     if not info_list:
         return None
@@ -162,18 +136,18 @@ def _parse_image(page: dict) -> WikimediaImage | None:
     if not any(lic in raw_license for lic in _ALLOWED_LICENSES):
         return None
 
-    # MIME — raster only, no SVG/TIF
+    # MIME — raster only
     mime = info.get("mime", "").lower()
     if mime not in _ACCEPTED_MIME:
         return None
 
-    # Dimensions — need at least 500px on the short side for decent quality
+    # Dimensions — at least 500 px short side
     width = info.get("width", 0)
     height = info.get("height", 0)
     if min(width, height) < 500:
         return None
 
-    # File size: skip stubs (<30 KB) and huge RAW scans (>15 MB)
+    # File size: skip stubs and huge scans
     size = info.get("size", 0)
     if not (30_000 <= size <= 15_000_000):
         return None
@@ -182,7 +156,6 @@ def _parse_image(page: dict) -> WikimediaImage | None:
     if _SKIP_RE.search(title):
         return None
 
-    # Extract description and categories for richer scoring
     description = re.sub(
         r"<[^>]+>", "",
         meta.get("ImageDescription", {}).get("value", "") or "",
@@ -191,7 +164,6 @@ def _parse_image(page: dict) -> WikimediaImage | None:
         meta.get("Categories", {}).get("value", "") or ""
     ).replace("|", " ")
 
-    # Skip if description clearly indicates non-photo content
     if _DESC_SKIP_RE.search(description):
         return None
 
@@ -205,6 +177,7 @@ def _parse_image(page: dict) -> WikimediaImage | None:
     return WikimediaImage(
         title=title,
         url=info.get("url", ""),
+        thumb_url=info.get("thumburl", ""),
         author=author,
         license=raw_license,
         width=width,
@@ -222,6 +195,7 @@ def _parse_image(page: dict) -> WikimediaImage | None:
 _IMAGEINFO_PARAMS = {
     "prop": "imageinfo",
     "iiprop": "url|size|extmetadata|mime",
+    "iiurlwidth": 1024,   # request blessed CDN thumbnail URL to avoid 429s
     "format": "json",
 }
 
@@ -261,160 +235,13 @@ async def _text_search(
 
 
 # ---------------------------------------------------------------------------
-# Scoring — info role (artistic photograph for detail screen)
+# Public API — search Wikimedia only (called by search.py orchestrator)
 # ---------------------------------------------------------------------------
 
-def _score_info(img: WikimediaImage) -> float:
-    """Score for the info/detail-screen role.
+async def search_wikimedia(latin_name: str) -> list[WikimediaImage]:
+    """Search Wikimedia Commons and return all valid candidates.
 
-    Goal: artistic photograph showing the plant in context.
-    Ideal: landscape or wide-square, high resolution, scenic setting,
-    natural colours.  JPEG ~340 KB, 640–1024 px.
-    """
-    score = 0.0
-    text = img._text.lower()
-
-    # --- Aspect ratio: landscape or wide-square is ideal ---
-    ar = img.aspect
-    if 1.2 <= ar <= 1.8:          # classic landscape
-        score += 5.0
-    elif 0.9 <= ar <= 2.2:        # acceptable range
-        score += 3.0
-    elif 0.7 <= ar <= 2.8:
-        score += 1.0
-    if ar > 2.8:                  # extreme panorama
-        score -= 3.0
-
-    # --- Resolution: reward high-res originals ---
-    mp = img.megapixels
-    if mp >= 4.0:
-        score += 4.0
-    elif mp >= 2.0:
-        score += 3.0
-    elif mp >= 1.0:
-        score += 2.0
-    else:
-        score += 1.0
-
-    # --- File size sweet spot (natural JPEG photo range) ---
-    kb = img.size_bytes / 1024
-    if 150 <= kb <= 2000:
-        score += 2.0
-    elif 80 <= kb <= 4000:
-        score += 1.0
-
-    # --- Content signals from title + description + categories ---
-    # Scenic / artistic shots
-    if _SCENIC_RE.search(text):
-        score += 3.0
-    # Flower-related content (basic relevance)
-    if _FLOWER_RE.search(text):
-        score += 2.0
-    # Quality badges on Commons
-    if _QUALITY_RE.search(text):
-        score += 4.0
-
-    # --- Penalties ---
-    # Close-ups belong in the blossom role, not info
-    if _CLOSEUP_RE.search(text):
-        score -= 3.0
-    # Non-flower parts are less appealing for an artistic shot
-    if _NONFLOWER_PARTS_RE.search(text):
-        score -= 2.0
-
-    # JPEG preferred (natural photos vs PNG diagrams/screenshots)
-    if img.url.lower().endswith((".jpg", ".jpeg")):
-        score += 1.0
-
-    return score
-
-
-# ---------------------------------------------------------------------------
-# Scoring — blossom role (close-up for rembg → home.png)
-# ---------------------------------------------------------------------------
-
-def _score_blossom(img: WikimediaImage) -> float:
-    """Score for the blossom/home-png role.
-
-    Goal: tight close-up of flower head, ideally a single bloom filling
-    the frame.  Square or portrait orientation works best for rembg
-    background removal and subsequent cropping.
-    Ideal: 400–500 px output after rembg, PNG with transparency.
-    """
-    score = 0.0
-    text = img._text.lower()
-
-    # --- Aspect ratio: single clear scale, no stacking ---
-    # Near-square/portrait = flower fills the frame = rembg works well.
-    # Landscape = flower is small against context = rembg fails.
-    ar = img.aspect
-    if 0.65 <= ar <= 1.25:        # ideal — near-square or slight portrait
-        score += 8.0
-    elif ar < 0.65:               # tall/narrow portrait — unusual but acceptable
-        score += 2.0
-    elif ar <= 1.5:               # mild landscape — below average
-        score -= 2.0
-    else:                         # strong landscape — very bad for rembg
-        score -= 8.0
-
-    # --- Short-side resolution (rembg quality scales with input) ---
-    short = img.short_side
-    if short >= 1500:
-        score += 4.0
-    elif short >= 1000:
-        score += 3.0
-    elif short >= 700:
-        score += 2.0
-    elif short >= 500:
-        score += 1.0
-
-    # --- Content signals: close-up / macro / single flower ---
-    if _CLOSEUP_RE.search(text):
-        score += 5.0
-    if _FLOWER_RE.search(text):
-        score += 3.0
-
-    # Single-flower indicators
-    if re.search(r"\bsingle\b|\bisolated\b|\bone\b", text):
-        score += 3.0
-    # White/plain background (great for rembg)
-    if re.search(r"\bwhite.?background\b|\bisolated\b|\bstudio\b", text):
-        score += 4.0
-
-    # Quality badges
-    if _QUALITY_RE.search(text):
-        score += 3.0
-
-    # --- Penalties ---
-    # Non-flower parts → rembg gives poor masks
-    if _NONFLOWER_PARTS_RE.search(text):
-        score -= 5.0
-    # Habitat / landscape → subject too small for rembg
-    if _SCENIC_RE.search(text):
-        score -= 3.0
-    # Multiple plants / group shots → messy rembg output
-    if re.search(r"\bfield\b|\bmeadow\b|\bmany\b|\bgroup\b|\bmass\b", text):
-        score -= 3.0
-
-    # File size: close-ups tend to be moderate-sized JPEGs
-    kb = img.size_bytes / 1024
-    if 100 <= kb <= 1500:
-        score += 1.0
-
-    return score
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-async def find_images(latin_name: str) -> ImagePair:
-    """Return the best (info, blossom) image pair from Wikimedia Commons.
-
-    Searches with multiple strategies to build a large candidate pool,
-    then scores each candidate independently for both roles.
-
-    Raises ValueError when no usable images can be found.
+    Does NOT score or select — that's handled by the unified orchestrator.
     """
     genus = latin_name.split()[0]
 
@@ -428,37 +255,41 @@ async def find_images(latin_name: str) -> ImagePair:
                     seen.add(img.title)
                     candidates.append(img)
 
-        # 1. Species category — most precise; well-curated for most species
+        # 1. Species category — most precise
         _add(await _category_search(client, latin_name, limit=50))
 
-        # 2. Full-text search with exact latin name (catches mis-categorised files)
+        # 2. Genus category — broader but catches subspecies / cultivars
+        if len(candidates) < _MIN_CANDIDATES:
+            _add(await _category_search(client, genus, limit=40))
+
+        # 3. Full-text search with exact Latin name
         if len(candidates) < _MIN_CANDIDATES:
             _add(await _text_search(client, f'"{latin_name}"', limit=40))
 
-        # 3. Genus + "flower" text search — fills gaps without the noise of
-        #    the broad genus category (Category:Rosa has thousands of unrelated images)
+        # 4. Genus + "flower" text search
         if len(candidates) < _MIN_CANDIDATES:
             _add(await _text_search(client, f"{genus} flower", limit=30))
 
-        # 4. Plain genus text search as last resort
+        # 5. Genus + "blossom close-up" — specifically targeting blossom shots
+        if len(candidates) < _MIN_CANDIDATES:
+            _add(await _text_search(client, f"{genus} blossom close-up", limit=20))
+
+        # 6. Plain genus text search as last resort
         if len(candidates) < _MIN_CANDIDATES:
             _add(await _text_search(client, genus, limit=30))
 
-    if not candidates:
-        raise ValueError(
-            f"No suitable Wikimedia Commons images found for {latin_name!r}"
-        )
+    return candidates
 
-    # Score every candidate for both roles
-    scored_info = sorted(candidates, key=_score_info, reverse=True)
-    scored_blossom = sorted(candidates, key=_score_blossom, reverse=True)
 
-    best_info = scored_info[0]
+# ---------------------------------------------------------------------------
+# Legacy API — kept for backwards compatibility with existing callers
+# ---------------------------------------------------------------------------
 
-    # Pick a different image for blossom when possible
-    best_blossom = next(
-        (img for img in scored_blossom if img.title != best_info.title),
-        scored_blossom[0],
-    )
+async def find_images(latin_name: str) -> ImagePair:
+    """Return the best (info, blossom) pair from Wikimedia Commons.
 
-    return ImagePair(info=best_info, blossom=best_blossom)
+    DEPRECATED: Use search.find_images() instead for multi-source results.
+    Kept for backwards compatibility.
+    """
+    from services.images.search import find_images as _find
+    return await _find(latin_name)

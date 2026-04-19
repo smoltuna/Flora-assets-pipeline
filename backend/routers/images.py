@@ -106,16 +106,27 @@ async def _run_images_bg(flower_id: int) -> None:
             return
 
         try:
+            from config import settings
+
             pair = await find_images(flower.latin_name)
 
             info_path, author = await process_info_image(pair.info, flower.latin_name)
             flower.info_image_path = info_path
             flower.info_image_author = author
 
-            main_path = await process_main_image(pair.blossom, flower.latin_name)
+            main_path, _ = await process_main_image(
+                pair.blossom,
+                flower.latin_name,
+                candidates=pair.blossom_candidates,
+                fal_key=settings.fal_key,
+            )
             flower.main_image_path = main_path
 
-            lock_path = await generate_lock_image(main_path, flower.latin_name)
+            lock_path = await generate_lock_image(
+                main_path,
+                flower.latin_name,
+                fal_key=settings.fal_key,
+            )
             flower.lock_image_path = lock_path
 
             flower.status = "images_done"
