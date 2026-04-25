@@ -18,4 +18,7 @@ async def get_db() -> AsyncSession:
 
 async def create_tables() -> None:
     async with engine.begin() as conn:
+        # Keep local/dev bootstrap consistent with Alembic initial schema expectations.
+        await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
+        await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pg_trgm")
         await conn.run_sync(Base.metadata.create_all)

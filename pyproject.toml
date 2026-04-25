@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
-    "sqlalchemy>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.30.0",
     "pgvector>=0.3.6",
     "alembic>=1.14.0",
@@ -16,7 +16,7 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "wikipedia-api>=0.7.1",
     "fal-client>=0.10.0",
-    "rembg>=2.0.57",
+    "rembg[cpu]>=2.0.57",
     "pillow>=11.0.0",
     "numpy>=1.26.0",
     "structlog>=24.4.0",
@@ -27,9 +27,6 @@ dependencies = [
     "prometheus-client>=0.21.0",
     "boto3>=1.35.0",
     "mlflow>=2.19.0",
-    "transformers>=4.47.0",
-    "sentencepiece>=0.2.0",
-    "sacremoses>=0.1.1",
 ]
 
 [project.optional-dependencies]

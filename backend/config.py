@@ -13,11 +13,17 @@ class Settings(BaseSettings):
     ollama_embed_model: str = "nomic-embed-text"
 
     # Cloud LLM providers
+    gemini_api_key: str = ""
     groq_api_key: str = ""
     together_api_key: str = ""
     openai_api_key: str = ""
 
-    llm_provider: str = "ollama"  # ollama | groq | together | openai
+    llm_provider: str = "ollama"  # ollama | gemini | groq | together | openai
+
+    # Separate provider for translation — defaults to ollama (no rate limits, runs locally).
+    # Set TRANSLATION_PROVIDER=groq in .env only if you have a paid Groq account with
+    # sufficient TPM quota (free tier ~14,400 TPM is too low for batch translation).
+    translation_provider: str = "ollama"
 
     # AWS
     aws_access_key_id: str = ""

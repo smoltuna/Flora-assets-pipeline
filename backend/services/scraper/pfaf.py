@@ -28,15 +28,76 @@ _BASE = "https://pfaf.org/user/Plant.aspx"
 _DELAY = 2.0
 
 
+def _clean_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _parse_int_rating(value: str | None) -> int | None:
+    if not value:
+        return None
+    m = re.search(r"\b([0-5])\b", value)
+    return int(m.group(1)) if m else None
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in values:
+        k = v.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(v)
+    return out
+
+
+def _extract_care_from_icons(care_cell: BeautifulSoup) -> dict[str, str]:
+    labels: list[str] = []
+    for img in care_cell.find_all("img"):
+        label = _clean_text((img.get("title") or img.get("alt") or ""))
+        if label:
+            labels.append(label)
+
+    if not labels:
+        return {}
+
+    labels = _dedupe(labels)
+    hardiness: list[str] = []
+    soil: list[str] = []
+    sun: list[str] = []
+    other: list[str] = []
+
+    for label in labels:
+        lower = label.lower()
+        if any(k in lower for k in ("hardy", "frost", "tender", "warm", "temperature")):
+            hardiness.append(label)
+        elif any(k in lower for k in ("soil", "water", "moist", "wet", "drained", "aquatic")):
+            soil.append(label)
+        elif any(k in lower for k in ("sun", "shade")):
+            sun.append(label)
+        else:
+            other.append(label)
+
+    care: dict[str, str] = {}
+    if sun:
+        care["Sun"] = ", ".join(sun)
+    if soil:
+        care["Soil"] = ", ".join(soil)
+    if hardiness:
+        care["Hardiness"] = ", ".join(hardiness)
+    if other:
+        care["Other"] = ", ".join(other)
+    return care
+
+
 async def scrape_pfaf(latin_name: str) -> PFAFData | None:
-    url = f"{_BASE}?Latin={latin_name.replace(' ', '+')}"
     async with httpx.AsyncClient(
         timeout=30.0,
         headers={"User-Agent": "FloraRAGPipeline/1.0 (portfolio; contact: simone.84858@gmail.com)"},
         follow_redirects=True,
     ) as client:
         try:
-            resp = await client.get(url)
+            # Use LatinName to open the actual plant detail page.
+            resp = await client.get(_BASE, params={"LatinName": latin_name})
             resp.raise_for_status()
         except httpx.HTTPStatusError:
             return None
@@ -50,49 +111,33 @@ async def scrape_pfaf(latin_name: str) -> PFAFData | None:
     data = PFAFData(latin_name=latin_name)
     data.raw_text = soup.get_text(separator="\n", strip=True)
 
-    # Common name
-    cn_tag = soup.select_one("h2.plant-common-name, span#Label1, .common-name")
-    if cn_tag:
-        data.common_name = cn_tag.get_text(strip=True) or None
-
-    # Star ratings (PFAF uses images with alt text "star" or numeric spans)
-    def _parse_rating(label: str) -> int | None:
-        row = soup.find(string=re.compile(label, re.I))
-        if not row:
-            return None
-        parent = row.parent
-        # Look for digit nearby
-        text = parent.get_text()
-        m = re.search(r"\b([0-5])\b", text)
-        return int(m.group(1)) if m else None
-
-    data.edibility_rating = _parse_rating("edib")
-    data.medicinal_rating = _parse_rating("medic")
-    data.other_uses_rating = _parse_rating("other use")
-
-    # Weed potential
-    weed_row = soup.find(string=re.compile(r"weed potential", re.I))
-    if weed_row:
-        data.weed_potential = weed_row.parent.get_text(strip=True).replace("Weed potential", "").strip() or None
-
-    # Care info — harvest structured table rows
-    care: dict[str, str] = {}
+    # Parse top-level key/value rows from plant detail tables.
+    row_values: dict[str, str] = {}
+    care_cell = None
     for row in soup.select("table tr"):
-        cells = row.find_all(["td", "th"])
-        if len(cells) >= 2:
-            key = cells[0].get_text(strip=True).rstrip(":")
-            val = cells[1].get_text(strip=True)
-            if key and val and len(key) < 50:
-                care[key] = val
-    data.care_info = care
+        cells = row.find_all(["td", "th"], recursive=False)
+        if len(cells) < 2:
+            continue
+        key = _clean_text(cells[0].get_text(" ", strip=True)).rstrip(":")
+        if not key or len(key) > 80:
+            continue
+        val = _clean_text(cells[1].get_text(" ", strip=True))
+        row_values[key] = val
+        if "care" in key.lower():
+            care_cell = cells[1]
 
-    # Habitat — look for known section headers
-    for candidate in ("Habitat", "habitat", "Ecology"):
-        section = soup.find(string=re.compile(candidate, re.I))
-        if section:
-            p = section.find_next("p")
-            if p:
-                data.habitat = p.get_text(strip=True)
-                break
+    # Common/detail fields
+    data.common_name = row_values.get("Common Name") or None
+    data.edibility_rating = _parse_int_rating(row_values.get("Edibility Rating"))
+    data.medicinal_rating = _parse_int_rating(row_values.get("Medicinal Rating"))
+    data.other_uses_rating = _parse_int_rating(row_values.get("Other Uses"))
+    data.weed_potential = row_values.get("Weed Potential") or None
+    data.habitat = row_values.get("Habitats") or None
+
+    # Care info from PFAF care icons (exact labels preserved as values).
+    if care_cell is not None:
+        data.care_info = _extract_care_from_icons(care_cell)
+    else:
+        data.care_info = {}
 
     return data

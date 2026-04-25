@@ -21,7 +21,10 @@ import structlog
 
 log = structlog.get_logger()
 
+import json as _json
+
 _OUTPUT_DIR = Path("/tmp/flora_images")
+_XCASSETS_DIR = Path(__file__).parents[3] / "output" / "FlowerAssets.xcassets"
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +224,22 @@ async def generate_lock_image(
         log.info("lock.no_key_fallback", latin_name=latin_name)
         result = _fit_square(_fallback_silhouette(main_image_path), 200)
 
-    slug = latin_name.replace(" ", "_").lower()
-    out_path = _OUTPUT_DIR / f"{slug}-lock.png"
+    slug = latin_name.replace(" ", "-").lower()
+    imageset_dir = _XCASSETS_DIR / f"{slug}-lock.imageset"
+    imageset_dir.mkdir(parents=True, exist_ok=True)
+    out_path = imageset_dir / "lock.png"
     result.save(str(out_path), "PNG", optimize=True, compress_level=9)
 
-    return str(out_path)
+    contents = {
+        "images": [
+            {"filename": "lock.png", "idiom": "universal", "scale": "1x"},
+            {"filename": "lock.png", "idiom": "universal", "scale": "2x"},
+            {"filename": "lock.png", "idiom": "universal", "scale": "3x"},
+        ],
+        "info": {"author": "xcode", "version": 1},
+    }
+    (imageset_dir / "Contents.json").write_text(
+        _json.dumps(contents, indent=2) + "\n", encoding="utf-8"
+    )
+
+    return f"{slug}-lock"

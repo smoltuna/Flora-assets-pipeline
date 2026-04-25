@@ -24,7 +24,7 @@ class SynthesizedFlower(BaseModel):
     etymology: str = Field(default=NOT_AVAILABLE)
     cultural_info: str = Field(default=NOT_AVAILABLE)
     petal_color_hex: str | None = Field(default=None)
-    care_info: dict = Field(default_factory=dict)
+    care_info: dict | list = Field(default_factory=dict)
 
 
 def _format_context(chunks: list[RetrievedChunk]) -> str:
@@ -61,6 +61,22 @@ async def synthesize(
     context = _format_context(chunks)
     display_name = common_name or latin_name
 
+    canonical_care = (
+        '[{"icon":"sun.max.fill","label":"Full Sun"},'
+        '{"icon":"moon.fill","label":"Full Shade"},'
+        '{"icon":"cloud.sun.fill","label":"Part Shade"},'
+        '{"icon":"drop","label":"Well Drained"},'
+        '{"icon":"drop.fill","label":"Well Drained Soil"},'
+        '{"icon":"drop.fill","label":"Moist Soil"},'
+        '{"icon":"snowflake","label":"Fully Hardy"},'
+        '{"icon":"snowflake","label":"Frost Hardy"},'
+        '{"icon":"snowflake","label":"Half Hardy"},'
+        '{"icon":"snowflake","label":"Tender"},'
+        '{"icon":"drop.fill","label":"Water Plants"},'
+        '{"icon":"drop.fill","label":"Wet Soil"}]'
+    )
+    skip_list = list(skip) if skip else "none"
+
     prompt = f"""You are a botanical data writer. Using ONLY the source material below, generate JSON for the plant "{display_name}" ({latin_name}).
 
 SOURCE MATERIAL:
@@ -74,9 +90,11 @@ Generate a JSON object with these fields (use exactly these keys):
 - "etymology": meaning/origin of the latin name (skip if insufficient: "{NOT_AVAILABLE}")
 - "cultural_info": historical or cultural significance (skip if insufficient: "{NOT_AVAILABLE}")
 - "petal_color_hex": dominant petal color as hex code like "#FF6B6B", or null if unknown
-- "care_info": object with keys like "water", "sun", "soil", "hardiness" — extract from PFAF data
+- "care_info": array of objects chosen ONLY from the canonical list below — pick all that apply based on PFAF data.
+  Canonical values (use these exact icon/label strings):
+  {canonical_care}
 
-Fields to skip (set to "{NOT_AVAILABLE}"): {list(skip) if skip else "none"}
+Fields to skip (set to "{NOT_AVAILABLE}"): {skip_list}
 
 Rules:
 - Ground every claim in the provided sources. Do not invent facts.

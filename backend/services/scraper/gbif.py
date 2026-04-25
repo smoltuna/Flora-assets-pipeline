@@ -29,10 +29,14 @@ _HEADERS = {"User-Agent": "FloraRAGPipeline/1.0 (portfolio; contact: simone.8485
 
 async def fetch_gbif(latin_name: str) -> GBIFData | None:
     async with httpx.AsyncClient(timeout=20.0, headers=_HEADERS) as client:
+        # GBIF handles hybrids best when the 'x' hybrid marker is stripped.
+        # e.g. 'Crocosmia x crocosmiiflora' → 'Crocosmia crocosmiiflora'
+        search_name = latin_name.replace(" x ", " ").replace(" × ", " ")
+
         # Match species by name
         match_resp = await client.get(
             f"{_SPECIES_API}/match",
-            params={"name": latin_name, "verbose": False},
+            params={"name": search_name, "verbose": False},
         )
         match_resp.raise_for_status()
         match = match_resp.json()

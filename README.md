@@ -1,8 +1,8 @@
-# Flora Asset Pipeline v2
+# Flora Asset Pipeline
 
 > Automated botanical data enrichment and image pipeline for the [Flora iOS app](https://apps.apple.com/ca/app/flora-flower-of-the-day/id6759986494)
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org)
 [![pgvector](https://img.shields.io/badge/pgvector-HNSW-orange.svg)](https://github.com/pgvector/pgvector)
@@ -10,19 +10,21 @@
 
 ## What It Does
 
-Given a plant's latin name (e.g. `Rosa canina`), the pipeline:
+Given a plant's Latin name (e.g. `Iris germanica`), the pipeline:
 
-1. Scrapes four authoritative botanical sources (PFAF, Wikipedia, Wikidata, GBIF)
-2. Embeds source chunks into pgvector (768-dim HNSW index)
-3. Retrieves relevant context via hybrid BM25 + dense vector search (Reciprocal Rank Fusion)
-4. Removes semantic near-duplicates (0.92 cosine threshold)
-5. Grades retrieval quality per-field using **Corrective RAG (CRAG)**
-6. Synthesizes structured botanical content via a local or cloud LLM
-7. Fact-checks generated fields against sources using **Self-RAG**
-8. Translates into DE/FR/ES/IT (MarianMT) and ZH/JA (Llama)
-9. Exports xcassets-compatible JSON for the Flora iOS app
+1. Scrapes four authoritative botanical sources — PFAF, Wikipedia, Wikidata, GBIF
+2. Embeds source text into pgvector (768-dim HNSW index via `nomic-embed-text`)
+3. Retrieves all source chunks for the flower
+4. Removes semantic near-duplicates (cosine ≥ 0.92 threshold)
+5. Routes synthesis adaptively based on which sources are available
+6. Grades retrieval quality per field using **Corrective RAG (CRAG)**
+7. Synthesizes structured botanical content via a configured LLM
+8. Fact-checks each generated field against sources using **Self-RAG**, storing confidence 0–1
+9. Translates into DE/FR/ES/IT/ZH/JA via Ollama (field-by-field for reliability)
+10. Generates 3 processed images per flower (info card, transparent blossom, lock icon)
+11. Exports a complete `FlowerAssets.xcassets` bundle ready to drop into the iOS project
 
-**Output:** description, fun fact, habitat, etymology, cultural info, care data, petal color hex, confidence scores, and 3 processed images (info, transparent-background blossom, lock screen).
+**Output per flower:** description, fun fact, wiki summary, habitat, etymology, cultural info, petal color hex, PFAF care data, confidence scores, 6-language translations, and 3 images.
 
 ---
 
@@ -38,19 +40,21 @@ Given a plant's latin name (e.g. `Rosa canina`), the pipeline:
                           │                 ▼                       │
                           │  Embedder  →  pgvector (HNSW 768d)      │
                           │                 │                       │
-                          │  Retriever (BM25 + dense, RRF fusion)   │
+                          │  Retriever → all chunks for flower      │
                           │                 │                       │
-                          │  Deduplicator (cosine 0.92 threshold)   │
+                          │  Deduplicator (cosine ≥ 0.92)          │
                           │                 │                       │
-                          │  CRAG Grader  →  per-field quality check │
+                          │  Adaptive routing (full/sparse/minimal) │
                           │                 │                       │
-                          │  Synthesizer  →  LLM (Ollama/Groq)      │
+                          │  CRAG Grader → per-field quality check  │
                           │                 │                       │
-                          │  Self-RAG Verifier  →  confidence scores │
+                          │  Synthesizer → LLM (Ollama/Groq/…)     │
                           │                 │                       │
-                          │  /images   →  Wikimedia → rembg → lock  │
-                          │  /translate →  MarianMT + Llama CJK     │
-                          │  /export   →  xcassets JSON             │
+                          │  Self-RAG Verifier → confidence scores  │
+                          │                 │                       │
+                          │  /translate →  Ollama llama3.2:3b       │
+                          │  /images   →  Wikimedia → rembg → lock │
+                          │  /export   →  FlowerAssets.xcassets     │
                           └─────────────────────────────────────────┘
                                           │
                           ┌──────────────────────────────┐
@@ -65,123 +69,163 @@ Given a plant's latin name (e.g. `Rosa canina`), the pipeline:
 
 ### Prerequisites
 
-- Docker & Docker Compose
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ (for frontend dev)
+- A [fal.ai](https://fal.ai/dashboard/keys) API key (for vision judging + lock icon generation — pipeline degrades gracefully without it)
 
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/yourusername/Flora-RAG-Pipeline.git
-cd Flora-RAG-Pipeline
+git clone https://github.com/yourusername/Flora-Asset-Pipeline.git
+cd Flora-Asset-Pipeline
 cp .env.example .env
-# Edit .env — set LLM_PROVIDER and the matching API key
 ```
 
-### 2. Start all services
+Edit `.env` — at minimum set `FAL_KEY`. `LLM_PROVIDER=ollama` is the default and requires no API key.
+
+### 2. Create the Python virtualenv
 
 ```bash
-docker-compose up -d
-# PostgreSQL + pgvector → localhost:5432
-# Ollama (local LLM)    → localhost:11434
-# MLflow tracking UI    → localhost:5000
-# FastAPI backend       → localhost:8000  (Swagger: /docs)
-# Next.js frontend      → localhost:3000
+uv sync
 ```
 
-### 3. Run database migrations
+This is required to run the pipeline scripts locally (they connect directly to the DB).
+
+### 3. Start all services
 
 ```bash
-cd backend
-uv sync --all-extras
-uv run alembic upgrade head
+# Recommended: handles pull, preflight checks, and startup order
+./scripts/start_services.sh
+
+# Or equivalently (Docker handles ordering via healthchecks):
+docker compose up -d
 ```
 
-### 4. Seed and enrich flowers
+Services started:
+- **PostgreSQL + pgvector** → `localhost:5432`
+- **Ollama** → `localhost:11434` (pulls `llama3.2:3b` + `nomic-embed-text` on first boot, ~2.5 GB)
+- **MLflow** → `localhost:5001`
+- **FastAPI backend** → `localhost:8000` (Swagger: `/docs`)
+- **Next.js frontend** → `localhost:3000`
+
+> **First run:** Ollama will pull both models on startup. The backend healthcheck waits up to 10 minutes — this is normal. Monitor with `docker compose logs -f ollama`.
+
+### 4. Run the pipeline
 
 ```bash
-# Add demo flowers
-uv run python scripts/seed_flowers.py --file data/demo_flowers.txt
+# Full pipeline: data + images + xcassets export (recommended)
+.venv/bin/python scripts/run_all.py
 
-# Run full pipeline on first 5 pending flowers
-uv run python scripts/run_batch.py --limit 5
+# Data only (no fal.ai key needed)
+.venv/bin/python scripts/run_all.py --skip-images
+
+# Single flower
+.venv/bin/python scripts/run_all.py --name "Rosa canina"
 ```
 
-### 5. Browse the dashboard
+Edit the `FLOWERS` list at the top of `scripts/run_all.py` to change which flowers are processed. Default demo flowers are in `data/demo_flowers.txt`.
 
-Open [http://localhost:3000](http://localhost:3000) — add flowers, run scrape/enrich, inspect confidence scores.
+### 5. Check the output
 
-### 6. Export for Flora iOS app
-
-```bash
-# Export all enriched flowers
-python -m cli export --all --output ./exports
 ```
+output/FlowerAssets.xcassets/
+  Contents.json                        ← Xcode bundle root
+  flowers.dataset/
+    Contents.json
+    flowers.json                       ← array of all flower records
+  iris-germanica.imageset/
+    Contents.json
+    home.png                           ← 600×600 RGBA, bg-removed blossom
+  iris-germanica-info.imageset/
+    Contents.json
+    info.jpg                           ← max 1024px, JPEG q85
+  iris-germanica-lock.imageset/
+    Contents.json
+    lock.png                           ← 200×200 RGBA, FLUX-generated icon
+```
+
+This folder can be dropped directly into the Flora iOS Xcode project.
+
+### 6. Browse the dashboard
+
+Open [http://localhost:3000](http://localhost:3000) — inspect confidence scores, view enriched data, trigger pipeline stages manually.
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/run_all.py` | **Recommended.** Full pipeline: seed → data → images → xcassets export |
+| `scripts/run_data_pipeline.py` | Data only (scrape → RAG → translate). No images, no fal.ai needed |
+| `scripts/run_image_pipeline.py` | Images only. Flower must already be enriched |
+| `scripts/start_services.sh` | Start Docker services with preflight checks (`--no-ui`, `--stop`) |
+
+All scripts accept `--name "Latin name"`, `--file flowers.txt`, or `--limit N` to select flowers.
 
 ---
 
 ## Pipeline Stages
 
-| Stage | Description | Implementation |
-|-------|-------------|----------------|
-| **Scrape** | PFAF (care info + ratings), Wikipedia (extract + taxobox), Wikidata SPARQL (range, conservation), GBIF (taxonomy, distributions) | `services/scraper/` |
-| **Embed** | Chunk source text → `nomic-embed-text` → pgvector (768d, HNSW, m=16, ef=64) | `services/rag/embedder.py` |
-| **Retrieve** | Hybrid BM25 (`tsvector GIN`) + cosine similarity (`HNSW <=>`) fused via RRF | `services/rag/retriever.py` |
-| **Deduplicate** | Remove semantically near-identical chunks (cosine ≥ 0.92); prefer longer/structured source | `services/rag/deduplicator.py` |
-| **Grade (CRAG)** | LLM scores retrieved chunks per field; re-routes synthesis if quality is insufficient | `services/rag/grader.py` |
-| **Synthesize** | Source-attributed prompt → LLM → structured JSON (description, fun_fact, habitat, etc.) | `services/rag/synthesizer.py` |
-| **Verify (Self-RAG)** | LLM fact-checks each generated field against the original source material; returns confidence 0–1 | `services/rag/verifier.py` |
-| **Images** | Wikimedia Commons (CC0/CC-BY only) → rembg background removal → lock screen posterize | `services/images/` |
-| **Translate** | MarianMT for EU languages (de/fr/es/it); Llama via Ollama for CJK (zh/ja) | `services/translation/` |
-| **Export** | Merge all fields → xcassets-compatible JSON with image references | `routers/export.py`, `cli/export.py` |
+| Stage | What it does | How |
+|-------|-------------|-----|
+| **1. Scrape** | Fetch raw botanical data from four sources | PFAF via BeautifulSoup (HTML parse, 2 s rate-limit delay); Wikipedia via REST API + MediaWiki API for taxobox; Wikidata via SPARQL (QID lookup → conservation status, common names); GBIF v1 REST API (species match → vernacular names, distributions) |
+| **2. Embed** | Convert source text to 768-dim vectors | Each source → single chunk; `nomic-embed-text` via Ollama; stored in `source_embeddings` with HNSW index (m=16, ef=64) |
+| **3. Retrieve** | Fetch all embeddings for the flower | Per-flower SELECT from `source_embeddings`; ranking and filtering handled downstream |
+| **4. Deduplicate** | Remove semantically near-identical chunks | Pairwise cosine similarity matrix; cosine ≥ 0.92 → same cluster; keeps longest text, tiebreaks by structured source (PFAF/Wikidata > Wikipedia prose) |
+| **5. Adaptive routing** | Decide which fields to synthesize | PFAF + Wikipedia present → full 7-field synthesis; Wikidata or GBIF only → skip `fun_fact`, `cultural_info`; no recognised sources → also skip `etymology` |
+| **6. CRAG Grade** | Per-field retrieval quality check | LLM asked whether chunks are relevant per field; ≥2 relevant → sufficient; 1 → partial; 0 → field set to `"Information not available."` |
+| **7. Synthesize** | Generate structured JSON from sources | Source-attributed prompt grouped by label (PFAF / Wikipedia / Wikidata / GBIF); LLM returns JSON with all output fields; temperature 0.1 |
+| **8. Verify (Self-RAG)** | Fact-check each generated field | LLM rates 0.0–1.0 how well the generated claim is supported by source text; score stored in `flowers.confidence_scores` JSONB |
+| **9. Persist** | Save enriched flower to DB | Updates `flowers` record; status → `"enriched"`; assigns sequential feature dates starting 2026-05-01 (flower[0] = May 1, flower[1] = May 2, …) |
+| **10. Translate** | Translate into 6 languages | All 6 languages (DE/FR/ES/IT/ZH/JA) via Ollama `llama3.2:3b`; field-by-field calls for reliability (42 LLM calls per flower); ~10–30 min for 5 flowers on M-series Mac |
+| **Images** | Fetch and process 3 image variants | Wikimedia Commons search (CC0/CC-BY only, ≥500 px); fal.ai Llava-Next scores candidates; `rembg` for background removal; FLUX via fal.ai for lock icon; Pillow for resize/crop |
+| **Export** | Build xcassets bundle | Writes `flowers.json` array + per-flower imageset folders into `output/FlowerAssets.xcassets/` |
 
 ---
 
 ## Project Structure
 
 ```
-Flora-RAG-Pipeline/
+Flora-Asset-Pipeline/
 ├── backend/
-│   ├── main.py                  # FastAPI app, OTel + Prometheus setup
+│   ├── main.py                  # FastAPI app entry point
 │   ├── config.py                # Pydantic settings (env-driven)
-│   ├── models.py                # SQLAlchemy ORM (Flower, RawSource, SourceEmbedding, Translation)
-│   ├── alembic/                 # DB migrations (hybrid_search SQL fn, HNSW/GIN indexes)
+│   ├── models.py                # SQLAlchemy ORM: Flower, RawSource, SourceEmbedding, Translation
+│   ├── database.py              # Async session factory + create_tables()
 │   ├── routers/                 # flowers · scrape · enrich · images · translate · export
 │   ├── services/
 │   │   ├── scraper/             # pfaf · wikipedia · wikidata · gbif
 │   │   ├── rag/                 # embedder · retriever · deduplicator · grader · synthesizer · verifier
-│   │   ├── llm/                 # provider abstraction · ollama · groq · together
+│   │   ├── llm/                 # provider abstraction · groq · ollama · together · gemini · rate_limiter
 │   │   ├── images/              # wikimedia · processor · lock_gen
-│   │   └── translation/         # translator (MarianMT + Llama CJK)
+│   │   └── translation/         # translator (Ollama, all 6 languages)
 │   └── tasks/
-│       └── pipeline.py          # 9-stage sequential orchestration + MLflow tracking
+│       └── pipeline.py          # 10-stage sequential orchestrator + MLflow tracking
 ├── frontend/
 │   └── src/
-│       ├── app/                 # Dashboard + flower detail page (Next.js App Router)
+│       ├── app/                 # Dashboard + flower detail (Next.js 15 App Router)
 │       ├── components/          # FlowerCard · DataFieldsView · ConfidenceScores
 │       ├── lib/api.ts           # Typed API client
 │       └── types/flower.ts      # TypeScript interfaces
 ├── tests/
-│   ├── test_rag_pipeline.py     # Unit: deduplication, synthesis parsing
+│   ├── conftest.py
+│   ├── test_rag_pipeline.py     # Unit: synthesis parsing, deduplication
 │   ├── test_scrapers.py         # Unit: Wikipedia + GBIF with respx mocks
 │   ├── test_deduplication.py    # Unit: extended deduplication scenarios
+│   ├── test_confidence_and_images.py
 │   └── test_integration.py      # Integration: FastAPI + PostgreSQL end-to-end
-├── experiments/
-│   ├── embedding_eval.py        # MLflow: compare nomic-embed-text vs mxbai-embed-large on recall@5
-│   └── chunk_strategy.py        # MLflow: compare whole_doc / paragraph / sentence chunking strategies
 ├── data/
 │   └── demo_flowers.txt         # 15 botanically diverse demo entries
 ├── scripts/
-│   ├── seed_flowers.py          # Bulk-insert latin names
-│   └── run_batch.py             # Process pending flowers through full pipeline
-├── cli/
-│   ├── __main__.py              # Entry point: export / status subcommands
-│   └── export.py                # xcassets JSON export
-├── data/
-│   └── demo_flowers.txt         # 15 botanically diverse demo entries
-├── infra/                       # Terraform: AWS S3 + VPC + RDS PostgreSQL 17
-├── k8s/                         # Kubernetes: Deployment · Service · Ingress · Secrets
-├── .github/workflows/ci.yml     # GitHub Actions: lint → typecheck → test → Docker build
+│   ├── run_all.py               # Full pipeline (recommended entry point)
+│   ├── run_data_pipeline.py     # Data pipeline only
+│   ├── run_image_pipeline.py    # Image pipeline only
+│   └── start_services.sh        # Docker service startup with preflight checks
+├── infra/
+│   └── ollama-entrypoint.sh     # Pulls llama3.2:3b + nomic-embed-text on container start
+├── output/                      # Generated — FlowerAssets.xcassets/ written here
+├── .env.example
 └── docker-compose.yml           # PostgreSQL · Ollama · MLflow · backend · frontend
 ```
 
@@ -191,134 +235,95 @@ Flora-RAG-Pipeline/
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Python 3.11, FastAPI, SQLAlchemy 2 async, Alembic |
-| **Vector DB** | PostgreSQL 17 + pgvector (HNSW index, 768d), hybrid `hybrid_search()` SQL function |
-| **LLM (local)** | Ollama — `llama3.1:8b` (synthesis) + `nomic-embed-text` (embedding) |
-| **LLM (cloud)** | Groq, Together.ai, OpenAI — provider-agnostic `LLMProvider` Protocol |
-| **RAG patterns** | CRAG, Self-RAG, semantic deduplication, hybrid BM25+dense retrieval |
-| **Translation** | Hugging Face `transformers` (MarianMT EU), Llama CJK via Ollama |
-| **Image processing** | rembg (background removal), Pillow (resize/crop/posterize) |
+| **Backend** | Python 3.11+, FastAPI, SQLAlchemy 2 async |
+| **Vector DB** | PostgreSQL 17 + pgvector (HNSW index, 768d) |
+| **Embedding model** | `nomic-embed-text` via Ollama (768-dim) |
+| **LLM (synthesis)** | Provider-agnostic — Ollama (default), Groq, Together.ai, OpenAI, Gemini |
+| **LLM (translation)** | Ollama `llama3.2:3b` — all 6 languages, field-by-field |
+| **RAG patterns** | CRAG, Self-RAG, semantic deduplication, adaptive routing |
+| **Image processing** | rembg (background removal), Pillow (resize/crop), fal.ai (vision judge + FLUX lock icon) |
 | **Frontend** | Next.js 15 App Router, TypeScript, Tailwind CSS |
-| **Observability** | OpenTelemetry (FastAPI auto-instrumentation), Prometheus `/metrics`, MLflow experiment tracking |
-| **Infrastructure** | Docker Compose (local), Terraform (AWS S3 + RDS), Kubernetes manifests |
-| **CI/CD** | GitHub Actions (ruff lint, mypy, pytest, Docker build) |
+| **Observability** | MLflow experiment tracking, structlog |
+| **Infrastructure** | Docker Compose (local) |
 
 ---
 
 ## LLM Providers
 
-The backend abstracts LLM calls behind a `LLMProvider` Protocol. Configure via `LLM_PROVIDER` env var:
+Configure via `LLM_PROVIDER` in `.env`. All providers implement the same `LLMProvider` protocol. Ollama is the default and requires no API key.
 
-| Provider | `LLM_PROVIDER` value | Required env var |
-|----------|---------------------|------------------|
-| Ollama (local, default) | `ollama` | — |
-| Groq (free tier, fast) | `groq` | `GROQ_API_KEY` |
-| Together.ai | `together` | `TOGETHER_API_KEY` |
-| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Provider | `LLM_PROVIDER` | Env var | Notes |
+|----------|---------------|---------|-------|
+| **Ollama** (default) | `ollama` | — | Runs locally; no cost; slower on CPU/integrated GPU |
+| Groq | `groq` | `GROQ_API_KEY` | Fast; free tier has ~28 RPM — built-in rate limiter handles this |
+| Together.ai | `together` | `TOGETHER_API_KEY` | Good fallback if Groq quota is exhausted |
+| OpenAI | `openai` | `OPENAI_API_KEY` | Highest quality; paid |
+| Gemini | `gemini` | `GEMINI_API_KEY` | Free tier has very low RPM limits |
+
+Embeddings always use Ollama (`nomic-embed-text`) regardless of the synthesis provider.
+
+> **Translation note:** `TRANSLATION_PROVIDER` is a separate setting (default: `ollama`). Avoid switching it to Groq on the free tier — the 42 sequential calls per flower quickly exhaust the TPM limit.
 
 ---
 
 ## API Reference
 
-FastAPI auto-generates Swagger docs at [http://localhost:8000/docs](http://localhost:8000/docs).
+Swagger docs auto-generated at [http://localhost:8000/docs](http://localhost:8000/docs).
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/flowers` | GET | List flowers (filter by `?status=`) |
 | `/flowers` | POST | Add a new flower |
-| `/flowers/{id}` | GET | Get flower detail |
-| `/scrape/{id}/sync` | POST | Scrape all sources (sync) |
+| `/flowers/{id}` | GET | Flower detail |
+| `/scrape/{id}/sync` | POST | Scrape all four sources (sync) |
 | `/enrich/{id}/sync` | POST | Run full RAG pipeline (sync) |
 | `/enrich/{id}/chunks` | GET | Inspect retrieved + deduplicated chunks |
-| `/images/{id}` | POST | Run image pipeline (async) |
-| `/images/{id}/serve/{type}` | GET | Serve image file (`info`/`main`/`lock`) |
-| `/translate/{id}` | POST | Run translation for all languages |
-| `/export/{id}` | GET | Export xcassets-compatible JSON |
-| `/metrics` | GET | Prometheus metrics scrape endpoint |
+| `/images/{id}` | POST | Run image pipeline |
+| `/translate/{id}` | POST | Translate into all 6 languages |
+| `/export/{id}` | GET | Export xcassets-compatible JSON for one flower |
+| `/export/batch` | POST | Export all enriched flowers as individual JSON files |
+| `/export/xcassets` | POST | Build complete `FlowerAssets.xcassets` bundle |
 | `/health` | GET | Health check |
-
----
-
-## MLflow Experiment Tracking
-
-Each pipeline run logs to MLflow under the `flora-enrichment` experiment:
-
-- **Parameters:** `latin_name`, `sources_scraped`, `llm_provider`
-- **Metrics:** `pipeline_duration_s`, `chunks_retrieved`, `chunks_after_dedup`, per-field `confidence_llm_*` scores
-
-View the MLflow UI at [http://localhost:5000](http://localhost:5000).
-
-### Embedding Model Evaluation
-
-Compare retrieval quality across embedding models on a hand-labeled botanical query set:
-
-```bash
-# Ensure Ollama models are pulled
-ollama pull nomic-embed-text
-ollama pull mxbai-embed-large
-
-uv run python experiments/embedding_eval.py
-```
-
-Logs recall@5 and precision@5 per model to the `embedding-model-eval` experiment.
-
-### Chunking Strategy Evaluation
-
-Compare whole-document, paragraph, and sentence-level chunking on recall@5:
-
-```bash
-uv run python experiments/chunk_strategy.py
-```
-
-Logs recall@5, index size, and build time per strategy to `chunk-strategy-eval`.
+| `/metrics` | GET | Prometheus scrape endpoint |
 
 ---
 
 ## Running Tests
 
 ```bash
-cd backend
-
 # Unit tests (no DB required)
-uv run pytest tests/ -v -m "not integration"
+.venv/bin/python -m pytest tests/ -v -m "not integration"
 
-# Integration tests (requires PostgreSQL)
+# Integration tests (requires running PostgreSQL)
 DATABASE_URL=postgresql+asyncpg://flora:flora@localhost:5432/flora \
-  uv run pytest tests/test_integration.py -v -m integration
+  .venv/bin/python -m pytest tests/test_integration.py -v -m integration
 ```
 
 ---
 
-## Cloud Deployment
+## MLflow Experiment Tracking
 
-### Terraform (AWS)
+Each pipeline run logs to the `flora-enrichment` experiment:
 
-```bash
-cd infra
-terraform init
-terraform plan -var="db_password=your-password"
-terraform apply
-```
+- **Tags:** `latin_name`, `llm_provider`, `flower_id`
+- **Metrics:** `pipeline_duration_s`, `chunks_retrieved`, `chunks_after_dedup`, per-field `confidence_llm_*`
 
-Provisions: S3 artifact bucket, VPC (2 private subnets), RDS PostgreSQL 17 with pgvector.
-
-### Kubernetes
-
-```bash
-# Apply secrets (edit k8s/secrets.yaml first)
-kubectl apply -f k8s/secrets.yaml
-kubectl apply -f k8s/
-```
+View the MLflow UI at [http://localhost:5001](http://localhost:5001).
 
 ---
 
 ## Design Decisions
 
 - **No LangChain** — all RAG components are plain Python for full control and simpler debugging
-- **Sequential pipeline** — no parallelism; simpler reasoning, easier to trace
-- **Provider-agnostic LLM** — swap Ollama → Groq → Together with a single env var
-- **Semantic dedup threshold 0.92** — calibrated to collapse paraphrase without losing complementary sources
-- **CC0/CC-BY images only** — no licensing friction for the Flora iOS app
+- **Sequential pipeline** — no parallelism within a flower; easier to trace, reason about, and test
+- **Provider-agnostic LLM** — swap Ollama → Groq → Together with a single env var change
+- **Ollama for translation** — avoids rate limits and cost; 42 field-by-field calls per flower trades speed for reliability with small models
+- **Semantic dedup threshold 0.92** — calibrated to collapse paraphrases without losing complementary information from different sources
+- **Adaptive routing** — gracefully skips fields when source coverage is insufficient, preventing hallucination rather than filling gaps with invented content
+- **CRAG before synthesis** — grades retrieval quality per field before sending to the LLM, not after
+- **Self-RAG confidence scores** — stored per field, enabling downstream filtering of low-confidence outputs
+- **CC0/CC-BY images only** — no licensing friction for Flora iOS app distribution
+- **Sequential feature dates** — flowers are assigned dates starting 2026-05-01, one per day in processing order
 
 ---
 

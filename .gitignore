@@ -1,32 +1,53 @@
+# Environment
 .env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .venv/
 .uv/
+*.egg-info/
+
+# Node
 node_modules/
 .next/
 dist/
-*.egg-info/
+
+# Testing
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-mlruns/
+test_results/
+
+# Terraform
 *.tfstate
 *.tfstate.backup
 .terraform/
 .terraform.lock.hcl
 infra/.env
 
+# MLflow
+mlruns/
+
 # macOS
 .DS_Store
 **/.DS_Store
 
-# Claude Code
+# Claude Code worktrees/settings
 .claude/
 
-# Project planning docs
-flora-asset-pipeline-v2.md
+# Project planning
+scratch/
 
-# Generated image output
-/tmp/flora_images/
-test_results/
+# Logs
+*.log
+logs/
+
+# Raw pipeline results / batch exports
+flowers.json
+output/
+
+# Kubernetes secrets (contain credentials)
+k8s/secrets.yaml

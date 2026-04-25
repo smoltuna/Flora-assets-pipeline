@@ -28,12 +28,13 @@ from services.images.wikimedia import WikimediaImage
 log = structlog.get_logger()
 
 _OUTPUT_DIR = Path("/tmp/flora_images")
+_XCASSETS_DIR = Path(__file__).parents[3] / "output" / "FlowerAssets.xcassets"
 _HEADERS = {
     "User-Agent": "FloraRAGPipeline/1.0 (portfolio; contact: simone.84858@gmail.com)"
 }
 
 _INFO_MAX_PX = 1024
-_MAIN_TARGET_PX = 492
+_MAIN_TARGET_PX = 600
 
 
 _WIKIMEDIA_RE = re.compile(
@@ -81,7 +82,24 @@ async def _download(url: str, *, retries: int = 3) -> bytes:
 
 
 def _slug(latin_name: str) -> str:
-    return latin_name.replace(" ", "_").lower()
+    return latin_name.replace(" ", "-").lower()
+
+
+def _write_imageset_contents(imageset_dir: Path, filename: str) -> None:
+    """Write the Xcode imageset Contents.json (all 3 scales point to the same file)."""
+    import json
+    imageset_dir.mkdir(parents=True, exist_ok=True)
+    contents = {
+        "images": [
+            {"filename": filename, "idiom": "universal", "scale": "1x"},
+            {"filename": filename, "idiom": "universal", "scale": "2x"},
+            {"filename": filename, "idiom": "universal", "scale": "3x"},
+        ],
+        "info": {"author": "xcode", "version": 1},
+    }
+    (imageset_dir / "Contents.json").write_text(
+        json.dumps(contents, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +114,7 @@ async def process_info_image(
     Output: JPEG, longest edge between 640–1024 px, quality 85.
     Returns (file_path, author_string).
     """
-    _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    slug = _slug(latin_name)
     fetch_url = img.thumb_url or _thumb_url(img.url, _INFO_MAX_PX)
     raw = await _download(fetch_url)
 
@@ -105,10 +123,13 @@ async def process_info_image(
     if max(pil.size) > _INFO_MAX_PX:
         pil.thumbnail((_INFO_MAX_PX, _INFO_MAX_PX), Image.LANCZOS)
 
-    out_path = _OUTPUT_DIR / f"{_slug(latin_name)}-info.jpg"
+    imageset_dir = _XCASSETS_DIR / f"{slug}-info.imageset"
+    imageset_dir.mkdir(parents=True, exist_ok=True)
+    out_path = imageset_dir / "info.jpg"
     pil.save(str(out_path), "JPEG", quality=85, optimize=True)
+    _write_imageset_contents(imageset_dir, "info.jpg")
 
-    return str(out_path), img.author
+    return f"{slug}-info", img.author
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +332,12 @@ async def process_main_image(
 
             if not _is_bad_mask(img_rgba, visible_pct):
                 result_img = _resize_fit_transparent(img_rgba, _MAIN_TARGET_PX)
-                out_path = _OUTPUT_DIR / f"{_slug(latin_name)}.png"
+                slug = _slug(latin_name)
+                imageset_dir = _XCASSETS_DIR / f"{slug}.imageset"
+                imageset_dir.mkdir(parents=True, exist_ok=True)
+                out_path = imageset_dir / "home.png"
                 result_img.save(str(out_path), "PNG", optimize=True)
+                _write_imageset_contents(imageset_dir, "home.png")
                 return str(out_path), raw_bytes
 
         except Exception as e:

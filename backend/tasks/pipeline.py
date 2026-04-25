@@ -13,9 +13,9 @@ Pipeline stages (in order):
 """
 from __future__ import annotations
 
-import random
 import time
 from contextlib import nullcontext
+from datetime import date
 
 import mlflow
 import structlog
@@ -32,6 +32,7 @@ from services.rag.grader import grade_retrieval
 from services.rag.retriever import RetrievedChunk, retrieve_for_flower
 from services.rag.synthesizer import NOT_AVAILABLE, SynthesizedFlower, synthesize
 from services.rag.verifier import verify_all_fields
+from services.translation.translator import translate_flower
 
 log = structlog.get_logger()
 
@@ -63,7 +64,7 @@ def _log_mlflow_metrics(confidence_scores: dict, n_chunks: int, n_deduped: int, 
         pass
 
 
-async def run_pipeline(flower_id: int, db: AsyncSession) -> Flower:
+async def run_pipeline(flower_id: int, db: AsyncSession, feature_date: date | None = None) -> Flower:
     """Run the full enrichment pipeline for a single flower. Returns the updated Flower."""
     flower = await db.get(Flower, flower_id)
     if not flower:
@@ -96,16 +97,49 @@ async def run_pipeline(flower_id: int, db: AsyncSession) -> Flower:
 
         sources_result = await db.execute(select(RawSource).where(RawSource.flower_id == flower_id))
         raw_sources = sources_result.scalars().all()
+        pfaf_raw_care: dict | None = None
+        for src in raw_sources:
+            if src.source != "pfaf" or not src.parsed_content:
+                continue
+            care_info = src.parsed_content.get("care_info")
+            if isinstance(care_info, dict) and care_info:
+                # Keep original PFAF labels/values as the canonical flower care info.
+                pfaf_raw_care = care_info
+                break
+
+        embed_success = 0
+        embed_failed = 0
         for src in raw_sources:
             if src.raw_content or src.parsed_content:
                 try:
                     await embed_and_store(flower_id, src, llm, db)
+                    embed_success += 1
                 except Exception as e:
+                    embed_failed += 1
                     log.warning("pipeline.embed_failed", source=src.source, error=str(e))
+
+        if raw_sources and embed_success == 0:
+            flower.status = "failed"
+            await db.commit()
+            raise RuntimeError(
+                "No embeddings were created. Ensure Ollama is running and "
+                "OLLAMA_EMBED_MODEL is available."
+            )
+
+        if embed_failed:
+            log.info("pipeline.embed_summary", succeeded=embed_success, failed=embed_failed)
 
         # Stage 3: Retrieve
         chunks = await retrieve_for_flower(flower_id, db)
         log.info("pipeline.retrieved", n_chunks=len(chunks))
+
+        if not chunks:
+            flower.status = "failed"
+            await db.commit()
+            raise RuntimeError(
+                "No retrieved chunks found after embedding. Pipeline stopped to avoid "
+                "saving low-confidence empty enrichment output."
+            )
 
         # Stage 4: Semantic deduplication
         deduped = deduplicate_chunks(chunks)
@@ -150,17 +184,28 @@ async def run_pipeline(flower_id: int, db: AsyncSession) -> Flower:
         flower.etymology = synthesis_result.etymology
         flower.cultural_info = synthesis_result.cultural_info
         flower.petal_color_hex = synthesis_result.petal_color_hex
-        if synthesis_result.care_info:
+        if pfaf_raw_care:
+            flower.care_info = pfaf_raw_care
+        elif synthesis_result.care_info:
             flower.care_info = synthesis_result.care_info
         flower.confidence_scores = confidence_scores
 
         if not flower.feature_month:
-            flower.feature_year = 2025
-            flower.feature_month = random.randint(1, 12)
-            flower.feature_day = random.randint(1, 28)
+            d = feature_date or date(2026, 5, 1)
+            flower.feature_year = d.year
+            flower.feature_month = d.month
+            flower.feature_day = d.day
 
         await db.commit()
         await db.refresh(flower)
+
+        # Stage 10: Translate into all supported languages
+        log.info("pipeline.translating", flower_id=flower_id)
+        try:
+            await translate_flower(flower_id, db)
+            log.info("pipeline.translated", flower_id=flower_id)
+        except Exception as e:
+            log.warning("pipeline.translate_failed", flower_id=flower_id, error=str(e))
 
         elapsed = time.perf_counter() - start_time
         _log_mlflow_metrics(confidence_scores, len(chunks), len(deduped), elapsed)

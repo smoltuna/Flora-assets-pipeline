@@ -11,7 +11,10 @@ def get_provider(provider_name: str | None = None) -> LLMProvider:
     from config import settings
     name = provider_name or settings.llm_provider
 
-    if name == "groq":
+    if name == "gemini":
+        from services.llm.gemini import GeminiProvider
+        return GeminiProvider()
+    elif name == "groq":
         from services.llm.groq import GroqProvider
         return GroqProvider()
     elif name == "together":
