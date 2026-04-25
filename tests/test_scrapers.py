@@ -1,14 +1,11 @@
 """Unit tests for scrapers — mock HTTP responses, no real network calls."""
 from __future__ import annotations
 
+import httpx
 import pytest
 import respx
-import httpx
-
-from services.scraper.wikipedia import fetch_wikipedia, _parse_taxobox
 from services.scraper.gbif import fetch_gbif
-from services.scraper.wikidata import fetch_wikidata
-
+from services.scraper.wikipedia import _parse_taxobox, fetch_wikipedia
 
 # --- Wikipedia tests ---
 
@@ -29,8 +26,16 @@ def wiki_extract_response():
                 "12345": {
                     "title": "Rosa canina",
                     "canonicalurl": "https://en.wikipedia.org/wiki/Rosa_canina",
-                    "extract": "Rosa canina, commonly known as the dog rose, is a variable climbing, rose species.\n\nIt is a deciduous shrub.",
-                    "revisions": [{"slots": {"main": {"*": "{{Taxobox|kingdom=Plantae|order=Rosales|family=Rosaceae}}}"}}}],
+                    "extract": (
+                        "Rosa canina, commonly known as the dog rose, "
+                        "is a variable climbing, rose species."
+                        "\n\nIt is a deciduous shrub."
+                    ),
+                    "revisions": [{"slots": {"main": {
+                        "*": "{{Taxobox|kingdom=Plantae"
+                             "|order=Rosales"
+                             "|family=Rosaceae}}}",
+                    }}}],
                 }
             }
         }

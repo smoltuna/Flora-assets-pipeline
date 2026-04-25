@@ -9,9 +9,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
-from services.rag.verifier import _parse_verification, verify_all_fields, verify_field
 from services.rag.synthesizer import NOT_AVAILABLE
-
+from services.rag.verifier import _parse_verification, verify_all_fields, verify_field
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -123,7 +122,7 @@ def test_not_available_fields_excluded_from_fields_to_verify():
 
 @pytest.mark.asyncio
 async def test_confidence_scores_only_contain_verified_fields():
-    """confidence_scores must only include fields that passed verification — not NOT_AVAILABLE ones."""
+    """confidence_scores must only include verified fields."""
     generated_fields = {
         "description": "A beautiful rose with pink petals.",
         "fun_fact": NOT_AVAILABLE,
@@ -132,7 +131,10 @@ async def test_confidence_scores_only_contain_verified_fields():
     }
 
     fields_to_verify = {f: v for f, v in generated_fields.items() if v != NOT_AVAILABLE}
-    results = await verify_all_fields(fields_to_verify, "Source text about rosa canina.", _MockLLM("0.85"))
+    source = "Source text about rosa canina."
+    results = await verify_all_fields(
+        fields_to_verify, source, _MockLLM("0.85"),
+    )
 
     confidence_scores = {field: {"llm_score": res.confidence} for field, res in results.items()}
 
@@ -227,9 +229,9 @@ async def test_image_bg_task_sets_all_three_paths_with_one_candidate(monkeypatch
             return _FakeSession()
 
     import routers.images as images_mod
-    import services.images.wikimedia as wiki_mod
-    import services.images.processor as proc_mod
     import services.images.lock_gen as lock_mod
+    import services.images.processor as proc_mod
+    import services.images.wikimedia as wiki_mod
 
     monkeypatch.setattr(images_mod, "async_session_factory", _FakeSessionFactory(), raising=False)
 

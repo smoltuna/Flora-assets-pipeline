@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import pytest
-
-from services.rag.deduplicator import deduplicate_chunks, cosine_sim
+from services.rag.deduplicator import cosine_sim, deduplicate_chunks
 from services.rag.retriever import RetrievedChunk
-from services.rag.synthesizer import _parse_response, NOT_AVAILABLE
-
+from services.rag.synthesizer import NOT_AVAILABLE, _parse_response
 
 # --- Deduplication tests ---
 
-def _make_chunk(text: str, source: str = "wikipedia", emb: list[float] | None = None) -> RetrievedChunk:
+def _make_chunk(
+    text: str, source: str = "wikipedia",
+    emb: list[float] | None = None,
+) -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id=0,
         chunk_text=text,
@@ -26,7 +27,10 @@ def test_deduplicate_removes_near_duplicates():
     chunks = [
         _make_chunk("Rosa canina grows in hedgerows across Europe.", "wikipedia", emb),
         _make_chunk("Rosa canina is found in hedgerows throughout Europe.", "gbif", emb),
-        _make_chunk("The roots are used in traditional medicine.", "pfaf", [0.0, 1.0] + [0.0] * 766),
+        _make_chunk(
+            "The roots are used in traditional medicine.",
+            "pfaf", [0.0, 1.0] + [0.0] * 766,
+        ),
     ]
     result = deduplicate_chunks(chunks, similarity_threshold=0.92)
     assert len(result) == 2  # near-duplicates collapsed, distinct chunk kept
@@ -62,7 +66,11 @@ def test_cosine_sim_orthogonal_vectors():
 # --- Synthesizer parsing tests ---
 
 def test_parse_response_valid_json():
-    json_str = '{"description": "A lovely rose.", "fun_fact": "Used in jams.", "petal_color_hex": "#FF0000"}'
+    json_str = (
+        '{"description": "A lovely rose.", '
+        '"fun_fact": "Used in jams.", '
+        '"petal_color_hex": "#FF0000"}'
+    )
     result = _parse_response(json_str)
     assert result.description == "A lovely rose."
     assert result.fun_fact == "Used in jams."

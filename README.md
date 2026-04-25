@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/flora-logo.png" alt="Flora" width="120">
+</p>
+
 # Flora Asset Pipeline
 
 > Automated botanical data enrichment and image pipeline for the [Flora iOS app](https://apps.apple.com/ca/app/flora-flower-of-the-day/id6759986494)

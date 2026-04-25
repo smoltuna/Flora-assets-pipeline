@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import math
-import pytest
 
-from services.rag.deduplicator import cosine_sim, deduplicate_chunks
+from services.rag.deduplicator import deduplicate_chunks
 from services.rag.retriever import RetrievedChunk
 
 
@@ -43,8 +42,15 @@ def test_deduplicate_single_chunk_returns_it():
 
 def test_deduplicate_prefers_longer_text():
     emb = _unit_vec(0)
-    short = RetrievedChunk(chunk_id=1, chunk_text="Short.", source="wikipedia", rrf_score=1.0, embedding=emb)
-    long_ = RetrievedChunk(chunk_id=2, chunk_text="Much longer text with lots of botanical detail about the species.", source="wikipedia", rrf_score=1.0, embedding=emb)
+    short = RetrievedChunk(
+        chunk_id=1, chunk_text="Short.",
+        source="wikipedia", rrf_score=1.0, embedding=emb,
+    )
+    long_ = RetrievedChunk(
+        chunk_id=2,
+        chunk_text="Much longer text with lots of botanical detail about the species.",
+        source="wikipedia", rrf_score=1.0, embedding=emb,
+    )
     result = deduplicate_chunks([short, long_], similarity_threshold=0.92)
     assert len(result) == 1
     assert "longer" in result[0].chunk_text
