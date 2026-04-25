@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from database import get_db
@@ -300,7 +301,7 @@ def _write_xcassets_files(xcassets_dir: Path, payloads: list[dict]) -> None:
 
 def _build_payload(
     flower: Flower,
-    translations: list[Translation],
+    translations: list[Translation] | Sequence[Translation],
     pfaf_care: dict | None = None,
 ) -> dict:
     """Build Flora-compatible JSON matching flowers.json schema.

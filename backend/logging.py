@@ -11,6 +11,7 @@ import sys
 _stdlib_dir = os.path.dirname(os.__file__)
 _log_init = os.path.join(_stdlib_dir, "logging", "__init__.py")
 _spec = importlib.util.spec_from_file_location("logging", _log_init)
+assert _spec is not None
 _real = importlib.util.module_from_spec(_spec)
 # Register before exec so recursive imports inside logging itself resolve correctly
 sys.modules["logging"] = _real

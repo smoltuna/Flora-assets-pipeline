@@ -312,9 +312,11 @@ async def find_images(latin_name: str) -> ImagePair:
 
     # Wrap into unified candidates
     candidates: list[_UnifiedCandidate] = []
-    for img in wiki_results:
+    wiki_list = wiki_results if isinstance(wiki_results, list) else []
+    inat_list = inat_results if isinstance(inat_results, list) else []
+    for img in wiki_list:
         candidates.append(_wrap_wikimedia(img))
-    for photo in inat_results:
+    for photo in inat_list:
         candidates.append(_wrap_inaturalist(photo))
 
     log.info(

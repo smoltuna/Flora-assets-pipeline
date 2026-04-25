@@ -12,7 +12,7 @@ class WikipediaData:
     url: str | None = None
     extract: str | None = None          # Full article plain text
     summary: str | None = None          # First paragraph
-    taxonomy: dict = None               # Parsed infobox key/value pairs
+    taxonomy: dict | None = None         # Parsed infobox key/value pairs
 
     def __post_init__(self) -> None:
         if self.taxonomy is None:

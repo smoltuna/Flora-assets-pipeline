@@ -120,7 +120,7 @@ async def process_info_image(
     pil = Image.open(io.BytesIO(raw)).convert("RGB")
 
     if max(pil.size) > _INFO_MAX_PX:
-        pil.thumbnail((_INFO_MAX_PX, _INFO_MAX_PX), Image.LANCZOS)
+        pil.thumbnail((_INFO_MAX_PX, _INFO_MAX_PX), Image.Resampling.LANCZOS)
 
     imageset_dir = _XCASSETS_DIR / f"{slug}-info.imageset"
     imageset_dir.mkdir(parents=True, exist_ok=True)
@@ -138,7 +138,7 @@ async def process_info_image(
 def _make_thumb(raw: bytes, max_px: int = 800) -> bytes:
     """Shrink to max_px for vision scoring — saves bandwidth and latency."""
     img = Image.open(io.BytesIO(raw)).convert("RGB")
-    img.thumbnail((max_px, max_px), Image.LANCZOS)
+    img.thumbnail((max_px, max_px), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=75)
     return buf.getvalue()
@@ -232,7 +232,7 @@ async def _fal_pick_best(
 def _resize_fit_transparent(img: Image.Image, max_size: int) -> Image.Image:
     """Resize to fit within max_size × max_size, pad with transparency."""
     img = img.convert("RGBA")
-    img.thumbnail((max_size, max_size), Image.LANCZOS)
+    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", (max_size, max_size), (0, 0, 0, 0))
     offset = ((max_size - img.width) // 2, (max_size - img.height) // 2)
     canvas.paste(img, offset, img)

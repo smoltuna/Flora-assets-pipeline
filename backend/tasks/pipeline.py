@@ -197,9 +197,9 @@ async def run_pipeline(
         flower.cultural_info = synthesis_result.cultural_info
         flower.petal_color_hex = synthesis_result.petal_color_hex
         if pfaf_raw_care:
-            flower.care_info = pfaf_raw_care
+            flower.care_info = pfaf_raw_care  # type: ignore[assignment]
         elif synthesis_result.care_info:
-            flower.care_info = synthesis_result.care_info
+            flower.care_info = synthesis_result.care_info  # type: ignore[assignment]
         flower.confidence_scores = confidence_scores
 
         if not flower.feature_month:

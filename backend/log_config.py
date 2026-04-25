@@ -5,7 +5,7 @@ from config import settings
 
 
 def configure_logging() -> None:
-    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    log_level: int = getattr(logging, settings.log_level.upper(), 20)  # 20 = INFO
 
     structlog.configure(
         processors=[

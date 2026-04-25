@@ -114,7 +114,7 @@ class WikimediaImage:
 class ImagePair:
     info: WikimediaImage              # artistic / landscape — for the detail/info screen
     blossom: WikimediaImage           # top-scored close-up (Gemini will re-rank)
-    blossom_candidates: list = None   # top N candidates for Gemini vision to judge
+    blossom_candidates: list | None = None   # top N candidates for Gemini vision to judge
 
 
 # ---------------------------------------------------------------------------
@@ -204,14 +204,15 @@ async def _category_search(
     client: httpx.AsyncClient, category: str, limit: int = 50,
 ) -> list[WikimediaImage]:
     """Fetch images from a Wikimedia Commons category."""
-    resp = await client.get(_API, params={
+    params: dict[str, object] = {
         **_IMAGEINFO_PARAMS,
         "action": "query",
         "generator": "categorymembers",
         "gcmtitle": f"Category:{category}",
         "gcmnamespace": 6,
         "gcmlimit": limit,
-    })
+    }
+    resp = await client.get(_API, params=params)  # type: ignore[arg-type]
     resp.raise_for_status()
     pages = resp.json().get("query", {}).get("pages", {})
     return [img for p in pages.values() if (img := _parse_image(p))]
@@ -221,14 +222,15 @@ async def _text_search(
     client: httpx.AsyncClient, query: str, limit: int = 40,
 ) -> list[WikimediaImage]:
     """Full-text search for images on Wikimedia Commons."""
-    resp = await client.get(_API, params={
+    params: dict[str, object] = {
         **_IMAGEINFO_PARAMS,
         "action": "query",
         "generator": "search",
         "gsrnamespace": 6,
         "gsrsearch": query,
         "gsrlimit": limit,
-    })
+    }
+    resp = await client.get(_API, params=params)  # type: ignore[arg-type]
     resp.raise_for_status()
     pages = resp.json().get("query", {}).get("pages", {})
     return [img for p in pages.values() if (img := _parse_image(p))]

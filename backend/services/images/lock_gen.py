@@ -53,7 +53,8 @@ def _dominant_petal_color(img_rgba: Image.Image) -> tuple[int, int, int]:
     sample = colorful[::step].astype(np.uint8)
     swatch = Image.fromarray(sample.reshape(1, len(sample), 3), "RGB")
     quantized = swatch.quantize(colors=8, method=Image.Quantize.MEDIANCUT)
-    palette = np.array(quantized.getpalette()[:8 * 3], dtype=np.float32).reshape(8, 3)
+    raw_palette = quantized.getpalette() or []
+    palette = np.array(raw_palette[:8 * 3], dtype=np.float32).reshape(8, 3)
 
     p_max = palette.max(axis=1)
     p_min = palette.min(axis=1)
@@ -101,7 +102,7 @@ def _remove_white_bg(img: Image.Image) -> Image.Image:
 
 def _fit_square(img: Image.Image, size: int = 200) -> Image.Image:
     img = img.convert("RGBA")
-    img.thumbnail((size, size), Image.LANCZOS)
+    img.thumbnail((size, size), Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     offset = ((size - img.width) // 2, (size - img.height) // 2)
     canvas.paste(img, offset, img)
