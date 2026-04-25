@@ -77,31 +77,47 @@ async def synthesize(
     )
     skip_list = list(skip) if skip else "none"
 
-    prompt = f"""You are a botanical data writer. Using ONLY the source material below, generate JSON for the plant "{display_name}" ({latin_name}).
+    na = NOT_AVAILABLE
+    prompt = (
+        f"You are a botanical data writer. Using ONLY the source "
+        f"material below, generate JSON for the plant "
+        f'"{display_name}" ({latin_name}).\n\n'
+        f"SOURCE MATERIAL:\n{context}\n\n"
+        f"Generate a JSON object with these fields "
+        f"(use exactly these keys):\n"
+        f'- "description": 2-3 sentence engaging description '
+        f'for a general audience (skip if insufficient: "{na}")\n'
+        f'- "fun_fact": one surprising or delightful fact '
+        f'(skip if insufficient: "{na}")\n'
+        f'- "wiki_description": concise encyclopedic summary, '
+        f'1-2 sentences (skip if insufficient: "{na}")\n'
+        f'- "habitat": native habitat and range description '
+        f'(skip if insufficient: "{na}")\n'
+        f'- "etymology": meaning/origin of the latin name '
+        f'(skip if insufficient: "{na}")\n'
+        f'- "cultural_info": historical or cultural significance '
+        f'(skip if insufficient: "{na}")\n'
+        f'- "petal_color_hex": dominant petal color as hex code '
+        f'like "#FF6B6B", or null if unknown\n'
+        f'- "care_info": array of objects chosen ONLY from the '
+        f"canonical list below — pick all that apply based on "
+        f"PFAF data.\n"
+        f"  Canonical values (use these exact icon/label "
+        f"strings):\n  {canonical_care}\n\n"
+        f'Fields to skip (set to "{na}"): {skip_list}\n\n'
+        f"Rules:\n"
+        f"- Ground every claim in the provided sources. "
+        f"Do not invent facts.\n"
+        f"- If a field cannot be answered from sources, "
+        f'use "{na}"\n'
+        f"- Return only valid JSON, no markdown, no explanation."
+    )
 
-SOURCE MATERIAL:
-{context}
-
-Generate a JSON object with these fields (use exactly these keys):
-- "description": 2-3 sentence engaging description for a general audience (skip if insufficient data: "{NOT_AVAILABLE}")
-- "fun_fact": one surprising or delightful fact (skip if insufficient: "{NOT_AVAILABLE}")
-- "wiki_description": concise encyclopedic summary, 1-2 sentences (skip if insufficient: "{NOT_AVAILABLE}")
-- "habitat": native habitat and range description (skip if insufficient: "{NOT_AVAILABLE}")
-- "etymology": meaning/origin of the latin name (skip if insufficient: "{NOT_AVAILABLE}")
-- "cultural_info": historical or cultural significance (skip if insufficient: "{NOT_AVAILABLE}")
-- "petal_color_hex": dominant petal color as hex code like "#FF6B6B", or null if unknown
-- "care_info": array of objects chosen ONLY from the canonical list below — pick all that apply based on PFAF data.
-  Canonical values (use these exact icon/label strings):
-  {canonical_care}
-
-Fields to skip (set to "{NOT_AVAILABLE}"): {skip_list}
-
-Rules:
-- Ground every claim in the provided sources. Do not invent facts.
-- If a field cannot be answered from sources, use "{NOT_AVAILABLE}"
-- Return only valid JSON, no markdown, no explanation."""
-
-    response = await llm.complete(prompt=prompt, system="You are a precise botanical content writer. Output only valid JSON.")
+    response = await llm.complete(
+        prompt=prompt,
+        system="You are a precise botanical content writer. "
+        "Output only valid JSON.",
+    )
 
     return _parse_response(response)
 
@@ -119,6 +135,8 @@ def _parse_response(response: str) -> SynthesizedFlower:
 
     try:
         data = json.loads(text[start:end])
-        return SynthesizedFlower(**{k: v for k, v in data.items() if k in SynthesizedFlower.model_fields})
+        fields = SynthesizedFlower.model_fields
+        filtered = {k: v for k, v in data.items() if k in fields}
+        return SynthesizedFlower(**filtered)
     except (json.JSONDecodeError, Exception):
         return SynthesizedFlower()

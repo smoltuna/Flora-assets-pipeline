@@ -19,9 +19,6 @@ from datetime import date
 
 import mlflow
 import structlog
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from config import settings
 from models import Flower, RawSource
 from routers.scrape import _do_scrape
@@ -33,10 +30,15 @@ from services.rag.retriever import RetrievedChunk, retrieve_for_flower
 from services.rag.synthesizer import NOT_AVAILABLE, SynthesizedFlower, synthesize
 from services.rag.verifier import verify_all_fields
 from services.translation.translator import translate_flower
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
-TEXT_FIELDS = ["description", "fun_fact", "wiki_description", "habitat", "etymology", "cultural_info"]
+TEXT_FIELDS = [
+    "description", "fun_fact", "wiki_description",
+    "habitat", "etymology", "cultural_info",
+]
 
 
 def _mlflow_context(latin_name: str, flower_id: int):
@@ -49,7 +51,10 @@ def _mlflow_context(latin_name: str, flower_id: int):
         return nullcontext()
 
 
-def _log_mlflow_metrics(confidence_scores: dict, n_chunks: int, n_deduped: int, elapsed: float) -> None:
+def _log_mlflow_metrics(
+    confidence_scores: dict, n_chunks: int,
+    n_deduped: int, elapsed: float,
+) -> None:
     """Log metrics to the active MLflow run; silently skip if no run is active."""
     try:
         flat: dict[str, float] = {
@@ -64,7 +69,10 @@ def _log_mlflow_metrics(confidence_scores: dict, n_chunks: int, n_deduped: int, 
         pass
 
 
-async def run_pipeline(flower_id: int, db: AsyncSession, feature_date: date | None = None) -> Flower:
+async def run_pipeline(
+    flower_id: int, db: AsyncSession,
+    feature_date: date | None = None,
+) -> Flower:
     """Run the full enrichment pipeline for a single flower. Returns the updated Flower."""
     flower = await db.get(Flower, flower_id)
     if not flower:
@@ -87,7 +95,11 @@ async def run_pipeline(flower_id: int, db: AsyncSession, feature_date: date | No
         flower.status = "scraping"
         await db.commit()
         scrape_result = await _do_scrape(flower_id, flower.latin_name, db)
-        log.info("pipeline.scraped", sources=scrape_result.sources_scraped, failed=scrape_result.sources_failed)
+        log.info(
+            "pipeline.scraped",
+            sources=scrape_result.sources_scraped,
+            failed=scrape_result.sources_failed,
+        )
 
         # Stage 2: Embed
         flower.status = "embedding"
@@ -209,7 +221,10 @@ async def run_pipeline(flower_id: int, db: AsyncSession, feature_date: date | No
 
         elapsed = time.perf_counter() - start_time
         _log_mlflow_metrics(confidence_scores, len(chunks), len(deduped), elapsed)
-        log.info("pipeline.complete", flower_id=flower_id, status=flower.status, elapsed_s=round(elapsed, 2))
+        log.info(
+            "pipeline.complete", flower_id=flower_id,
+            status=flower.status, elapsed_s=round(elapsed, 2),
+        )
         return flower
 
 

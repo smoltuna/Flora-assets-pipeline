@@ -1,12 +1,20 @@
 from datetime import datetime
 from typing import Any
+
+from database import Base
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    BigInteger, DateTime, ForeignKey, Index, Integer, Text, UniqueConstraint, func,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
-from database import Base
 
 
 class Flower(Base):

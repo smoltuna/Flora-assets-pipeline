@@ -13,14 +13,13 @@ Strategy:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 
 import structlog
+from models import Flower, Translation
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Flower, Translation
 from services.llm.provider import get_provider
 
 
@@ -41,7 +40,10 @@ LANG_NAMES = {
     "ja": "Japanese",
 }
 
-TEXT_FIELDS = ["description", "fun_fact", "wiki_description", "habitat", "etymology", "cultural_info"]
+TEXT_FIELDS = [
+    "description", "fun_fact", "wiki_description",
+    "habitat", "etymology", "cultural_info",
+]
 
 # camelCase keys used in LLM prompts (avoids underscore escaping issues in JSON)
 _FIELD_PROMPT_KEY = {
@@ -137,12 +139,16 @@ async def _batch_translate(
         f"Also add a \"name\" field with the proper {lang_name} botanical common name "
         f"(e.g. the actual local name, not a literal word-for-word translation).\n\n"
         f"Source (English):\n{source_json}\n\n"
-        f"Return ONLY a valid JSON object with the same keys plus \"name\". No markdown, no explanation."
+        f'Return ONLY a valid JSON object with the same keys '
+        f'plus "name". No markdown, no explanation.'
     )
     try:
         response = await llm.complete(
             prompt=prompt,
-            system=f"You are a precise botanical translator. Output only valid JSON with {lang_name} values.",
+            system=(
+                f"You are a precise botanical translator. "
+                f"Output only valid JSON with {lang_name} values."
+            ),
         )
         return _parse_json(response)
     except Exception as e:
@@ -176,11 +182,15 @@ async def _fieldwise_translate(
         try:
             resp = await llm.complete(
                 prompt=(
-                    f"Translate the following botanical text about {latin_name} into {lang_name}.\n\n"
+                    f"Translate the following botanical text "
+                    f"about {latin_name} into {lang_name}.\n\n"
                     f"{text}\n\n"
                     f"Reply with only the {lang_name} translation, nothing else."
                 ),
-                system=f"You are a botanical translator. Reply with only the translation in {lang_name}.",
+                system=(
+                    f"You are a botanical translator. "
+                    f"Reply with only the translation in {lang_name}."
+                ),
             )
             val = resp.strip()
             if val:

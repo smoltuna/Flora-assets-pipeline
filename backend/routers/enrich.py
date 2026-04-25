@@ -1,16 +1,15 @@
 """RAG enrichment endpoints — trigger pipeline stages for a flower."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from database import get_db
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from models import Flower
+from pydantic import BaseModel
 from services.llm.provider import get_provider
+from services.rag.deduplicator import deduplicate_chunks
 from services.rag.embedder import embed_all_sources
 from services.rag.retriever import retrieve_for_flower
-from services.rag.deduplicator import deduplicate_chunks
+from sqlalchemy.ext.asyncio import AsyncSession
 from tasks.pipeline import run_pipeline
 
 router = APIRouter()
@@ -41,7 +40,7 @@ async def enrich_flower(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> EnrichResult:
-    """Run full RAG pipeline in background (scrape → embed → deduplicate → CRAG → synthesize → verify → gap detect)."""
+    """Run full RAG pipeline in background."""
     flower = await db.get(Flower, flower_id)
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")

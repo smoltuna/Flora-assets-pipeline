@@ -4,9 +4,9 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-04-18
 """
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "0001"
 down_revision = None
@@ -63,7 +63,10 @@ def upgrade() -> None:
     op.create_table(
         "source_embeddings",
         sa.Column("id", sa.BigInteger(), primary_key=True),
-        sa.Column("raw_source_id", sa.BigInteger(), sa.ForeignKey("raw_sources.id", ondelete="CASCADE")),
+        sa.Column(
+            "raw_source_id", sa.BigInteger(),
+            sa.ForeignKey("raw_sources.id", ondelete="CASCADE"),
+        ),
         sa.Column("flower_id", sa.BigInteger(), sa.ForeignKey("flowers.id", ondelete="CASCADE")),
         sa.Column("chunk_text", sa.Text(), nullable=False),
         sa.Column("metadata", JSONB()),

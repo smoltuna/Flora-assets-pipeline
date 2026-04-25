@@ -19,9 +19,8 @@ from pathlib import Path
 
 import httpx
 import numpy as np
-from PIL import Image, ImageOps
-
 import structlog
+from PIL import Image, ImageOps
 
 from services.images.wikimedia import WikimediaImage
 
@@ -160,6 +159,7 @@ async def _fal_pick_best(
         return 0
 
     import os
+
     import fal_client
 
     os.environ["FAL_KEY"] = fal_key
@@ -269,7 +269,7 @@ async def process_main_image(
     Output: PNG, transparent background, max 492×492 px.
     Returns (file_path, raw_bytes_of_chosen_source).
     """
-    from rembg import remove, new_session
+    from rembg import new_session, remove
 
     _OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

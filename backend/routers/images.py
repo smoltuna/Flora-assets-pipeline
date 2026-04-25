@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from database import get_db
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
+from models import Flower
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from database import get_db
-from models import Flower
 
 router = APIRouter()
 
@@ -35,7 +34,10 @@ async def process_images(
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
     if flower.status not in ("enriched", "images_done", "complete"):
-        raise HTTPException(status_code=400, detail=f"Flower must be enriched first (status: {flower.status})")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Flower must be enriched first (status: {flower.status})",
+        )
 
     background_tasks.add_task(_run_images_bg, flower_id)
     return ImageResult(
@@ -93,11 +95,11 @@ async def serve_image(
 
 
 async def _run_images_bg(flower_id: int) -> None:
-    from database import async_session_factory
-    from services.images.wikimedia import find_images
-    from services.images.processor import process_info_image, process_main_image
-    from services.images.lock_gen import generate_lock_image
     import structlog
+    from database import async_session_factory
+    from services.images.lock_gen import generate_lock_image
+    from services.images.processor import process_info_image, process_main_image
+    from services.images.wikimedia import find_images
     log = structlog.get_logger()
 
     async with async_session_factory() as session:

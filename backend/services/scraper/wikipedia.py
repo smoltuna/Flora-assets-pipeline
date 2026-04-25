@@ -73,7 +73,9 @@ async def _try_fetch(latin_name: str, client: httpx.AsyncClient) -> WikipediaDat
         return None
 
     data = WikipediaData(latin_name=latin_name, page_title=page_title)
-    data.url = page.get("canonicalurl") or f"https://en.wikipedia.org/wiki/{page_title.replace(' ', '_')}"
+    base = "https://en.wikipedia.org/wiki"
+    slug = page_title.replace(" ", "_")
+    data.url = page.get("canonicalurl") or f"{base}/{slug}"
     data.extract = page.get("extract", "")
 
     if data.extract:

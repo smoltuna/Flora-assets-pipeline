@@ -7,10 +7,10 @@ The hybrid_search SQL function (defined in the DB migration) combines:
 """
 from dataclasses import dataclass
 
+from models import SourceEmbedding
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import SourceEmbedding
 from services.llm.provider import LLMProvider
 
 

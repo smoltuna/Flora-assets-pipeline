@@ -1,17 +1,16 @@
 """Scraping trigger endpoints — kick off per-source scraping for a flower."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from database import get_db
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from models import Flower, RawSource
+from pydantic import BaseModel
 from services.scraper.gbif import fetch_gbif
 from services.scraper.pfaf import scrape_pfaf
 from services.scraper.wikidata import fetch_wikidata
 from services.scraper.wikipedia import fetch_wikipedia
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 

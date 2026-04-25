@@ -1,13 +1,12 @@
 """CRUD + status endpoints for flowers."""
 from __future__ import annotations
 
+from database import get_db
 from fastapi import APIRouter, Depends, HTTPException
+from models import Flower, RawSource
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from database import get_db
-from models import Flower, RawSource, Translation
 
 router = APIRouter()
 
@@ -99,7 +98,8 @@ async def get_flower_status(flower_id: int, db: AsyncSession = Depends(get_db)) 
     flower = await db.get(Flower, flower_id)
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
-    sources_result = await db.execute(select(RawSource.source).where(RawSource.flower_id == flower_id))
+    stmt = select(RawSource.source).where(RawSource.flower_id == flower_id)
+    sources_result = await db.execute(stmt)
     sources = [row[0] for row in sources_result.all()]
     return FlowerStatusOut(
         id=flower.id,

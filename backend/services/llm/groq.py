@@ -1,7 +1,6 @@
 import asyncio
 
 import httpx
-
 from config import settings
 
 _GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"

@@ -53,7 +53,7 @@ def _dedupe(values: list[str]) -> list[str]:
 def _extract_care_from_icons(care_cell: BeautifulSoup) -> dict[str, str]:
     labels: list[str] = []
     for img in care_cell.find_all("img"):
-        label = _clean_text((img.get("title") or img.get("alt") or ""))
+        label = _clean_text(img.get("title") or img.get("alt") or "")
         if label:
             labels.append(label)
 

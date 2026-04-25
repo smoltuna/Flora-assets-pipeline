@@ -10,21 +10,9 @@
 
 ## What It Does
 
-Given a plant's Latin name (e.g. `Iris germanica`), the pipeline:
+Given a plant's Latin name (e.g. `Iris germanica`), the pipeline scrapes four botanical sources, enriches and fact-checks the data through a multi-stage RAG pipeline (CRAG + Self-RAG), translates into 6 languages, and generates 3 processed images — outputting a complete `FlowerAssets.xcassets` bundle ready to drop into the iOS project.
 
-1. Scrapes four authoritative botanical sources — PFAF, Wikipedia, Wikidata, GBIF
-2. Embeds source text into pgvector (768-dim HNSW index via `nomic-embed-text`)
-3. Retrieves all source chunks for the flower
-4. Removes semantic near-duplicates (cosine ≥ 0.92 threshold)
-5. Routes synthesis adaptively based on which sources are available
-6. Grades retrieval quality per field using **Corrective RAG (CRAG)**
-7. Synthesizes structured botanical content via a configured LLM
-8. Fact-checks each generated field against sources using **Self-RAG**, storing confidence 0–1
-9. Translates into DE/FR/ES/IT/ZH/JA via Ollama (field-by-field for reliability)
-10. Generates 3 processed images per flower (info card, transparent blossom, lock icon)
-11. Exports a complete `FlowerAssets.xcassets` bundle ready to drop into the iOS project
-
-**Output per flower:** description, fun fact, wiki summary, habitat, etymology, cultural info, petal color hex, PFAF care data, confidence scores, 6-language translations, and 3 images.
+**Output per flower:** description, fun fact, wiki summary, habitat, etymology, cultural info, petal color hex, care data, per-field confidence scores, 6-language translations, and 3 images.
 
 ---
 
@@ -303,7 +291,7 @@ DATABASE_URL=postgresql+asyncpg://flora:flora@localhost:5432/flora \
 
 ## MLflow Experiment Tracking
 
-Each pipeline run logs to the `flora-enrichment` experiment:
+Each pipeline run logs to the `flora-enrichment` experiment, making it easy to compare LLM providers, spot low-confidence flowers, and track how source coverage affects output quality across batches.
 
 - **Tags:** `latin_name`, `llm_provider`, `flower_id`
 - **Metrics:** `pipeline_duration_s`, `chunks_retrieved`, `chunks_after_dedup`, per-field `confidence_llm_*`
@@ -317,13 +305,10 @@ View the MLflow UI at [http://localhost:5001](http://localhost:5001).
 - **No LangChain** — all RAG components are plain Python for full control and simpler debugging
 - **Sequential pipeline** — no parallelism within a flower; easier to trace, reason about, and test
 - **Provider-agnostic LLM** — swap Ollama → Groq → Together with a single env var change
-- **Ollama for translation** — avoids rate limits and cost; 42 field-by-field calls per flower trades speed for reliability with small models
+- **Ollama for translation** — avoids rate limits and cost; field-by-field calls trade speed for reliability with small models
 - **Semantic dedup threshold 0.92** — calibrated to collapse paraphrases without losing complementary information from different sources
-- **Adaptive routing** — gracefully skips fields when source coverage is insufficient, preventing hallucination rather than filling gaps with invented content
-- **CRAG before synthesis** — grades retrieval quality per field before sending to the LLM, not after
 - **Self-RAG confidence scores** — stored per field, enabling downstream filtering of low-confidence outputs
 - **CC0/CC-BY images only** — no licensing friction for Flora iOS app distribution
-- **Sequential feature dates** — flowers are assigned dates starting 2026-05-01, one per day in processing order
 
 ---
 

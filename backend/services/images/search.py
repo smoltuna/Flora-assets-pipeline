@@ -20,8 +20,8 @@ from typing import Protocol, runtime_checkable
 
 import structlog
 
-from services.images.wikimedia import WikimediaImage, ImagePair, search_wikimedia
 from services.images.inaturalist import INatPhoto, search_inaturalist
+from services.images.wikimedia import ImagePair, WikimediaImage, search_wikimedia
 
 log = structlog.get_logger()
 

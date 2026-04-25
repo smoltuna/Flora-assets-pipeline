@@ -11,17 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json as _json
 from pathlib import Path
 
 import httpx
 import numpy as np
+import structlog
 from PIL import Image
 
-import structlog
-
 log = structlog.get_logger()
-
-import json as _json
 
 _OUTPUT_DIR = Path("/tmp/flora_images")
 _XCASSETS_DIR = Path(__file__).parents[3] / "output" / "FlowerAssets.xcassets"
@@ -119,6 +117,7 @@ async def _flux_generate(
 ) -> bytes | None:
     """Generate a flat botanical icon via FLUX Schnell on fal.ai."""
     import os
+
     import fal_client
 
     os.environ["FAL_KEY"] = fal_key

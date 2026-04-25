@@ -1,13 +1,12 @@
 """Translation endpoints — RAG-grounded translation via MarianMT + Llama."""
 from __future__ import annotations
 
+from database import get_db
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from models import Flower, Translation
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from database import get_db
-from models import Flower, Translation
 
 router = APIRouter()
 
@@ -46,7 +45,9 @@ async def translate_flower(
 
 
 @router.get("/{flower_id}", response_model=list[TranslationOut])
-async def get_translations(flower_id: int, db: AsyncSession = Depends(get_db)) -> list[TranslationOut]:
+async def get_translations(
+    flower_id: int, db: AsyncSession = Depends(get_db),
+) -> list[TranslationOut]:
     flower = await db.get(Flower, flower_id)
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")

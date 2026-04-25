@@ -1,17 +1,18 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from opentelemetry import trace, metrics as otel_metrics
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.exporter.prometheus import PrometheusMetricReader
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from prometheus_client import make_asgi_app
 
 from config import settings
 from database import create_tables
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from log_config import configure_logging
-from routers import flowers, scrape, enrich, images, translate, export
+from opentelemetry import metrics as otel_metrics
+from opentelemetry import trace
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
+from prometheus_client import make_asgi_app
+from routers import enrich, export, flowers, images, scrape, translate
 
 
 @asynccontextmanager

@@ -37,15 +37,12 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --all-extras
-        working-directory: backend
 
       - name: Lint with ruff
-        run: uv run ruff check .
-        working-directory: backend
+        run: uv run ruff check backend/
 
       - name: Type check with mypy
-        run: uv run mypy . --ignore-missing-imports
-        working-directory: backend
+        run: uv run mypy backend/ --ignore-missing-imports
 
       - name: Run tests
         run: uv run pytest tests/ -v

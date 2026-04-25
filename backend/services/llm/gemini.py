@@ -1,8 +1,8 @@
 import asyncio
 
 import httpx
-
 from config import settings
+
 from services.llm.rate_limiter import gemini_limiter
 
 _GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"

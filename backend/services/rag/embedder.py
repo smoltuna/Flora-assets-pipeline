@@ -3,10 +3,10 @@
 Uses nomic-embed-text-v1.5 via Ollama (768-dim, Matryoshka-capable).
 Each source's full text for a flower becomes one chunk (botanical entries are short).
 """
+from models import RawSource, SourceEmbedding
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import RawSource, SourceEmbedding
 from services.llm.provider import LLMProvider
 
 
