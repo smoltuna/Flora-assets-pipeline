@@ -197,6 +197,9 @@ async def export_flower(flower_id: int, db: AsyncSession = Depends(get_db)) -> J
     if not flower:
         raise HTTPException(status_code=404, detail="Flower not found")
 
+    if flower.status not in ("enriched", "images_done", "complete"):
+        raise HTTPException(status_code=400, detail="Flower not yet enriched")
+
     translations_result = await db.execute(
         select(Translation).where(Translation.flower_id == flower_id)
     )

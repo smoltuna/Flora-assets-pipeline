@@ -14,10 +14,16 @@ SQLite or is absent.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 # Skip entire module if no PostgreSQL DATABASE_URL is configured
 pytestmark = pytest.mark.integration
@@ -32,28 +38,50 @@ if not _HAS_PG:
     )
 
 
-_tables_created = False
-
-
 @pytest_asyncio.fixture
-async def client():
-    """Async HTTP client wired to the FastAPI app with a real DB."""
-    global _tables_created  # noqa: PLW0603
+async def client() -> AsyncGenerator[AsyncClient, None]:
+    """Async HTTP client with a test-scoped DB engine.
+
+    Creates a fresh SQLAlchemy engine per test so connections are bound
+    to the current event loop (avoids asyncpg 'another operation in
+    progress' errors).
+    """
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
-    from database import create_tables
+    from database import Base, get_db
     from main import app
 
-    if not _tables_created:
-        await create_tables()
-        _tables_created = True
+    test_engine = create_async_engine(_DB_URL, echo=False)
+    test_session_factory = async_sessionmaker(
+        test_engine, expire_on_commit=False,
+    )
+
+    async with test_engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "CREATE EXTENSION IF NOT EXISTS vector",
+        )
+        await conn.exec_driver_sql(
+            "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+        )
+        await conn.run_sync(Base.metadata.create_all)
+
+    async def _test_get_db() -> AsyncGenerator[  # type: ignore[misc]
+        AsyncSession, None,
+    ]:
+        async with test_session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _test_get_db
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test",
     ) as c:
         yield c
+
+    app.dependency_overrides.clear()
+    await test_engine.dispose()
 
 
 # ── Health check ─────────────────────────────────────────────────────────────
