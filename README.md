@@ -17,14 +17,8 @@
 
 ## What & why
 
-Given a plant's scientific name, the pipeline:
-
-1. scrapes five botanical sources,
-2. runs a multi-stage RAG pipeline grounded in retrieved context,
-3. fact-checks each generated claim against a fresh web snippet,
-4. translates into 6 languages with name-field grounding from Wikidata,
-5. picks and processes 3 images (info, hero, lock icon),
-6. exports an `xcassets` bundle that drops straight into the iOS project.
+Flora data pipeline is an 11-stage retrieval-augmented generation pipeline that takes a plant's Latin name and produces a fact-checked, multilingual record + image bundle that ships into an iOS app. 
+The interesting parts are: field-difficulty routing (different fields get different retrieval strategies), hybrid BM25 + dense + RRF with HyDE for vague fields, CRAG before synthesis, post-synthesis web fact-check to catch hallucinationsCRAG can't, and Self-RAG + LLM-as-Judge for two-axis evaluation persisted per-field.
 
 ---
 
