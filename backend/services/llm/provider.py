@@ -49,6 +49,9 @@ def get_provider(
     elif name == "together":
         from services.llm.together import TogetherProvider
         return TogetherProvider()
+    elif name == "bedrock":
+        from services.llm.bedrock import BedrockProvider
+        return BedrockProvider()
     else:
         from services.llm.ollama import OllamaProvider
         return OllamaProvider(model_override=step_model)

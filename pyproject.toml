@@ -27,6 +27,7 @@ dependencies = [
     "prometheus-client>=0.21.0",
     "mlflow>=2.19.0",
     "ddgs>=8.0.0",
+    "anthropic[bedrock]>=0.40.0",
 ]
 
 [project.optional-dependencies]

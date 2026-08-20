@@ -18,7 +18,14 @@ class Settings(BaseSettings):
     together_api_key: str = ""
     openai_api_key: str = ""
 
-    llm_provider: str = "ollama"  # ollama | gemini | groq | together
+    # AWS Bedrock — bearer-token auth via AWS_BEARER_TOKEN_BEDROCK, or SigV4 via
+    # standard AWS creds (~/.aws/credentials, IAM role). Cross-region inference
+    # profile IDs use a region prefix that MUST match aws_region: "us."/"eu."/"apac."
+    aws_region: str = "us-east-1"
+    aws_bearer_token_bedrock: str = ""
+    bedrock_model: str = ""  # falls back to us.anthropic.claude-haiku-4-5-20251001-v1:0
+
+    llm_provider: str = "ollama"  # ollama | gemini | groq | together | bedrock
 
     # Separate provider for translation — defaults to ollama (no rate limits, runs locally).
     # Set TRANSLATION_PROVIDER=groq in .env only if you have a paid Groq account with
