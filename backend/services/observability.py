@@ -324,7 +324,8 @@ def setup_observability(
     resource = Resource.create({"service.name": "flora-pipeline"})
 
     provider = TracerProvider(resource=resource)
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(insecure=True)))
+    if os.getenv("OTEL_TRACES_EXPORTER", "").lower() != "none":
+        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(insecure=True)))
     if include_batch_summary:
         provider.add_span_processor(batch_summary)
     provider.add_span_processor(_MLflowSpanProcessor())
